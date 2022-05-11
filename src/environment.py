@@ -9,8 +9,16 @@ from src.exceptions.invalid_action_excetion import InvalidActionException
 
 
 class Environment:
-    def __init__(self, environment_name, enable_graphics=False):
+    """
+    class to wrap the unity environment given for this exercise
+    """
 
+    def __init__(self, environment_name, enable_graphics=False):
+        """
+        constructor for the Environment class
+        :param environment_name: name of the environment to use, either "One" (one arm) or "Twenty" (twenty arms)
+        :param enable_graphics: parameter to set whether the environment is visualized or not visualized
+        """
         if environment_name is None:
             logging.error("MISSING ENVIRONMENT NAME ARGUMENT")
 
@@ -33,6 +41,17 @@ class Environment:
 
         environment_info = self._environment.reset(train_mode=True)[self._default_brain]
         self._number_of_agents = environment_info.agents
+
+    def reset(self, brain=None, train_mode=True):
+        """
+        function to reset environment and return environment info
+        :param brain: brain for which the environment is reset
+        :param train_mode: parameter to set if environment is for training or for evaluation
+        :return: info about the environment state
+        """
+        brain = brain if brain is not None else self._default_brain
+        info = self._environment.reset(train_mode=train_mode)[brain.brain_name]
+        return info
 
     def get_number_of_agents(self):
         """
