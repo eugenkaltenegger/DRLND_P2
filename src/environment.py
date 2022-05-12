@@ -42,15 +42,15 @@ class Environment:
         environment_info = self._environment.reset(train_mode=True)[self._default_brain]
         self._number_of_agents = environment_info.agents
 
-    def reset(self, brain=None, train_mode=True):
+    def reset(self, brain=None, train_environment=True):
         """
         function to reset environment and return environment info
         :param brain: brain for which the environment is reset
-        :param train_mode: parameter to set if environment is for training or for evaluation
+        :param train_environment: parameter to set whether the environment is for training or for evaluation
         :return: info about the environment state
         """
         brain = brain if brain is not None else self._default_brain
-        info = self._environment.reset(train_mode=train_mode)[brain.brain_name]
+        info = self._environment.reset(train_mode=train_environment)[brain.brain_name]
         return info
 
     def get_number_of_agents(self):
