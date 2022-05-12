@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
 
 class InvalidActionException(Exception):
-    super()
+    def __init__(self):
+        super()
