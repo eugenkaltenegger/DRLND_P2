@@ -3,6 +3,7 @@
 import logging
 import os
 
+import unityagents
 from unityagents import UnityEnvironment
 
 from src.exceptions.invalid_action_excetion import InvalidActionException
@@ -13,7 +14,7 @@ class Environment:
     class to wrap the unity environment given for this exercise
     """
 
-    def __init__(self, environment_name, enable_graphics=False):
+    def __init__(self, environment_name: str, enable_graphics: bool = False):
         """
         constructor for the Environment class
         :param environment_name: name of the environment to use, either "One" (one arm) or "Twenty" (twenty arms)
@@ -39,10 +40,10 @@ class Environment:
 
         self._default_brain = self._environment.brains[self._environment.brain_names[0]]
 
-        environment_info = self._environment.reset(train_mode=True)[self._default_brain]
+        environment_info = self._environment.reset(train_mode=True)[self._default_brain.brain_name]
         self._number_of_agents = environment_info.agents
 
-    def reset(self, brain=None, train_environment=True):
+    def reset(self, brain: unityagents.brain.BrainParameters = None, train_environment: bool = True):
         """
         function to reset environment and return environment info
         :param brain: brain for which the environment is reset
@@ -53,6 +54,14 @@ class Environment:
         info = self._environment.reset(train_mode=train_environment)[brain.brain_name]
         return info
 
+    def close(self):
+        """
+        function to close an environment
+        :return: None (to write None on environment on this function call)
+        """
+        self._environment.close()
+        return None
+
     def get_number_of_agents(self):
         """
         function to get the number of agents in the environment
@@ -60,7 +69,7 @@ class Environment:
         """
         return self._number_of_agents
 
-    def get_state_size(self, brain=None):
+    def get_state_size(self, brain: unityagents.brain.BrainParameters = None):
         """
         function to get the size of the state vector
         :param brain: brain for which the size of the state vector is returned
@@ -69,7 +78,7 @@ class Environment:
         brain = brain if brain is not None else self._default_brain
         return brain.vector_observation_space_size
 
-    def get_action_size(self, brain=None):
+    def get_action_size(self, brain: unityagents.brain.BrainParameters = None):
         """
         function to get the size of the action vector
         :param brain: brain for which the size of the action vector is returned
@@ -85,7 +94,7 @@ class Environment:
         """
         return [{"min": -1, "max": 1} for _ in self.get_action_size()]
 
-    def action(self, action_list, brain=None):
+    def action(self, action_list: [float], brain: unityagents.brain.BrainParameters = None):
         """
         function to set an action for a brain in the environment
         :param action_list: a list of actions for the agents
@@ -101,7 +110,7 @@ class Environment:
                 "reward": info.rewards,
                 "dones": info.local_done}
 
-    def _check_action(self, action_list):
+    def _check_action(self, action_list: [float]):
         """
         function to check if an action is within the range
         :param action_list: list of actions to check
