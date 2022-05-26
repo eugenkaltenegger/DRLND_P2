@@ -1,3 +1,10 @@
+# workspace specific
 /env
+/example
+/jupyter
+# python specific
+**/__pycache__/
+# IDE specific
 /.idea
+# log files
 *.log
