@@ -2,36 +2,30 @@
 
 from collections import OrderedDict
 from itertools import cycle
+from typing import Dict
+from typing import List
 
 import torch
 
 
 class Model(torch.nn.Module):
     """
-    class to hold a policy for an agent
+    class to hold a model for an agent
     """
 
-    def __init__(self,
-                 state_size: int,
-                 action_size: int,
-                 layers: [int],
-                 activation_function: torch.nn.modules.Module,
-                 output_function: torch.nn.modules.Module):
+    def __init__(self):
         """
-        constructor for Policy class
-        :param state_size: size of the state vector / input vector
-        :param action_size: size of the action vector / output vector
-        :param layers: list of layer sizes
-        :param activation_function: function to process output after each layer (except last)
-        :param output_function: function to process output after last layer
+        constructor for model class
+            this constructor requires the setup function afterwards
         """
         super(Model, self).__init__()
 
-        self._setup(state_size=state_size,
-                    action_size=action_size,
-                    layers=layers,
-                    activation_function=activation_function,
-                    output_function=output_function)
+        self._state_size = None
+        self._action_size = None
+        self._layers = None
+        self._activation_function = None
+        self._output_function = None
+        self._model_sequential = None
 
     def forward(self, state: torch.Tensor):
         """
@@ -56,12 +50,29 @@ class Model(torch.nn.Module):
         """
         self.train(False)
 
-    def _setup(self,
-               state_size: int,
-               action_size: int,
-               layers: [int],
-               activation_function: torch.nn.modules.Module,
-               output_function: torch.nn.modules.Module):
+    def to_checkpoint(self) -> Dict:
+        return {"input_size": self._state_size,
+                "output_size": self._action_size,
+                "hidden_layers": self._layers,
+                "activation_function": self._activation_function,
+                "output_function": self._output_function,
+                "state_dict": self.state_dict()}
+
+    def from_checkpoint(self, checkpoint: Dict):
+        self.setup(state_size=checkpoint["input_size"],
+                   action_size=checkpoint["output_size"],
+                   layers=checkpoint["hidden_layers"],
+                   activation_function=checkpoint["activation_function"],
+                   output_function=checkpoint["output_function"])
+        self.load_state_dict(state_dict=checkpoint["state_dict"])
+        return self
+
+    def setup(self,
+              state_size: int,
+              action_size: int,
+              layers: List[int],
+              activation_function: torch.nn.Module,
+              output_function: torch.nn.Module):
         """
         function to create a network with fully connected layers and a defined activation functions after each layer
         :param state_size: size of the state vector / input vector
@@ -72,20 +83,28 @@ class Model(torch.nn.Module):
         :return: sequential of the model dictionary
         """
 
-        input_size = state_size
-        output_size = action_size
+        self._state_size = state_size
+        self._action_size = action_size
+        self._layers = layers
+        self._activation_function = activation_function()
+        self._output_function = output_function()
 
-        layer_names = ["fc{}".format(counter) for counter in range(0, len(layers) + 1)]
-        layer_sizes = []
-        layer_sizes += [(input_size, layers[0])]
-        layer_sizes += [(layers[i - 1], layers[i]) for i in range(1, len(layers))]
-        layer_sizes += [(layers[-1], output_size)]
-        layer_objects = [torch.nn.Linear(layer_size[0], layer_size[1]) for layer_size in layer_sizes]
-        layers_dict = OrderedDict(zip(layer_names, layer_objects))
+        input_size = self._state_size
+        output_size = self._action_size
 
-        activation_function_names = ["af{}".format(counter) for counter in range(0, len(layers))]
-        activation_function_objects = [activation_function for _ in range(0, len(layers))]
-        activation_function_dict = OrderedDict(zip(activation_function_names, activation_function_objects))
+        # l stands for layer
+        l_names = ["fc{}".format(counter) for counter in range(0, len(self._layers) + 1)]
+        l_sizes = []
+        l_sizes += [(input_size, self._layers[0])]
+        l_sizes += [(self._layers[i - 1], self._layers[i]) for i in range(1, len(self._layers))]
+        l_sizes += [(self._layers[-1], output_size)]
+        l_objects = [torch.nn.Linear(layer_size[0], layer_size[1]) for layer_size in l_sizes]
+        layers_dict: Dict[str, torch.nn.Module] = OrderedDict(zip(l_names, l_objects))
+
+        # af stands for activation function
+        af_names = ["af{}".format(counter) for counter in range(0, len(self._layers))]
+        af_objects = [self._activation_function for _ in range(0, len(self._layers))]
+        activation_function_dict: Dict[str, torch.nn.Module] = OrderedDict(zip(af_names, af_objects))
 
         key_iterators = [iter(layers_dict.keys()), iter(activation_function_dict.keys())]
         values_iterators = [iter(layers_dict.values()), iter(activation_function_dict.values())]
@@ -93,8 +112,9 @@ class Model(torch.nn.Module):
         key_list = list(iterator.__next__() for iterator in cycle(key_iterators))
         value_list = list(iterator.__next__() for iterator in cycle(values_iterators))
 
-        model_dict = OrderedDict(zip(key_list, value_list))
+        model_dict: OrderedDict[str, torch.nn.Module] = OrderedDict(zip(key_list, value_list))
         model_sequential = torch.nn.Sequential(model_dict)
 
         self._model_sequential = model_sequential
-        self._output_function = output_function
+
+        return self

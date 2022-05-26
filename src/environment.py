@@ -3,6 +3,8 @@
 import logging
 import os
 
+import numpy
+import torch
 import unityagents
 from unityagents import UnityEnvironment
 
@@ -54,7 +56,7 @@ class Environment:
         info = self._environment.reset(train_mode=train_environment)[brain.brain_name]
         return info
 
-    def close(self):
+    def close(self) -> None:
         """
         function to close an environment
         :return: None (to write None on environment on this function call)
@@ -62,14 +64,14 @@ class Environment:
         self._environment.close()
         return None
 
-    def get_number_of_agents(self):
+    def get_number_of_agents(self) -> int:
         """
         function to get the number of agents in the environment
         :return: number of agents in the environment
         """
         return self._number_of_agents
 
-    def get_state_size(self, brain: unityagents.brain.BrainParameters = None):
+    def get_state_size(self, brain: unityagents.brain.BrainParameters = None) -> int:
         """
         function to get the size of the state vector
         :param brain: brain for which the size of the state vector is returned
@@ -78,7 +80,7 @@ class Environment:
         brain = brain if brain is not None else self._default_brain
         return brain.vector_observation_space_size
 
-    def get_action_size(self, brain: unityagents.brain.BrainParameters = None):
+    def get_action_size(self, brain: unityagents.brain.BrainParameters = None) -> int:
         """
         function to get the size of the action vector
         :param brain: brain for which the size of the action vector is returned
@@ -87,39 +89,39 @@ class Environment:
         brain = brain if brain is not None else self._default_brain
         return brain.vector_action_space_size
 
-    def get_action_range(self):
+    def get_action_range(self) -> [dict]:
         """
         function to get the range (as dict containing "min" and "max") for each value of the state vector
         :return: a list of dicts containing "min" and "max"  for each value of the action vector
         """
-        return [{"min": -1, "max": 1} for _ in self.get_action_size()]
+        return [{"min": -1, "max": 1} for _ in range(self.get_action_size())]
 
-    def action(self, action_list: [float], brain: unityagents.brain.BrainParameters = None):
+    def step(self, action_list: [float], brain: unityagents.brain.BrainParameters = None) -> {str: torch.Tensor}:
         """
         function to set an action for a brain in the environment
         :param action_list: a list of actions for the agents
         :param brain: brain for which the actions are set
-        :return: dict containing a dict with lists for the "next_state", the "reward" and the "dones" for each agent
+        :return: dict containing a dict with lists for the "next_state", the "reward" and the "done" for each agent
         """
         brain = brain if brain is not None else self._default_brain
 
         action_list = self._check_action(action_list=action_list)
         info = self._environment.step(action_list)[brain.brain_name]
 
-        return {"next_state": info.vector_observations,
-                "reward": info.rewards,
-                "dones": info.local_done}
+        return {"next_state": torch.tensor(info.vector_observations, dtype=torch.float),
+                "reward": torch.tensor(info.rewards, dtype=torch.float),
+                "done": torch.tensor(info.local_done, dtype=torch.float)}
 
-    def _check_action(self, action_list: [float]):
+    def _check_action(self, action_list: torch.Tensor) -> numpy.ndarray:
         """
         function to check if an action is within the range
         :param action_list: list of actions to check
         :return: list of actions if all action are within the range, raising an exception otherwise
         """
-        for action_value, action_range in zip(action_list, self.get_action_range()):
-            if action_value < action_range["min"] or action_value > action_range["max"]:
-                logging.warning("action value is not in range -1 to 1 (actual value: {})".format(action_value))
-            else:
-                raise InvalidActionException()
+        for action_array, action_range in zip(action_list, self.get_action_range()):
+            for action_value in action_array:
+                action_value = action_value.item()
+                if action_value < action_range["min"] or action_value > action_range["max"]:
+                    logging.debug("action value is not in range -1 to 1 (actual value: {})".format(action_value))
 
-        return action_list
+        return action_list.cpu().numpy()
