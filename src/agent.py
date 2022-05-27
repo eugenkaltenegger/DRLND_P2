@@ -65,7 +65,7 @@ class Agent:
         self._actor = self._actor.to(device=self._device)
         self._actor_optimizer = optimizer(params=self._actor.parameters(), lr=optimizer_learning_rate)
 
-        self._covariance_variance = torch.full(size=(action_size,), fill_value=0.25).to(device=self._device)
+        self._covariance_variance = torch.full(size=(action_size,), fill_value=0.01).to(device=self._device)
         self._covariance_matrix = torch.diag(self._covariance_variance).to(device=self._device)
 
     def setup_critic(self,
@@ -131,14 +131,6 @@ class Agent:
         # TODO: documentation
         state = state.to(self._device)
 
-        # self._covariance_fill = max(self._covariance_fill * 0.999, 0.1)
-        # self._covariance_variance = torch.full(size=(self._action_size,), fill_value=self._covariance_fill).to(device=self._device)
-        # self._covariance_matrix = torch.diag(self._covariance_variance).to(device=self._device)
-
-        # mean = self._actor(state)
-        # deviation = torch.nn.Softplus(torch.nn.Parameter(torch.zeros()))
-        #
-        # distribution = Normal(self._actor(state), deviation)
         distribution = MultivariateNormal(self._actor(state), self._covariance_matrix)
         action = distribution.sample()
         logarithmic_probability = distribution.log_prob(action)
@@ -146,8 +138,6 @@ class Agent:
 
     def get_critic(self, states: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         # TODO: documentation
-        # states = [state.to(self._device) for state in states]
-        # actions = [action.to(self._device) for action in actions]
         states = states.to(self._device)
         actions = actions.to(self._device)
 
@@ -192,7 +182,7 @@ class Agent:
 
             # Calculate gradients and perform backward propagation for actor network
             self._actor_optimizer.zero_grad()
-            actor_loss.backward(retain_graph=True)
+            actor_loss.backward()
             self._actor_optimizer.step()
 
             # Calculate gradients and perform backward propagation for critic network
