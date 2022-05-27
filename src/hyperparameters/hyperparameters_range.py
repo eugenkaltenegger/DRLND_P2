@@ -14,30 +14,35 @@ class HyperparametersRange:
         """
         constructor for hyperparameter ranges class
         """
-        hpr_dict = OrderedDict()
-        hpr_dict["episodes"] = [7]
-        hpr_dict["steps_per_episode"] = [3]
+        hp = OrderedDict()
 
-        hpr_dict["gamma"] = [0.995]
-        hpr_dict["clip"] = [0.200]
+        hp["episodes"] = [1000]
+        hp["rollout_steps"] = [60]
 
-        hpr_dict["actor_layers"] = [[128, 64, 32]]
-        hpr_dict["actor_activation_function"] = [torch.nn.ReLU]
-        hpr_dict["actor_output_function"] = [torch.nn.Tanh]
-        hpr_dict["actor_optimizer"] = [torch.optim.Adam]
-        hpr_dict["actor_optimizer_learning_rate"] = [0.005]
+        hp["gamma"] = [0.99]
+        hp["decay"] = [0.99]
+        hp["clip"] = [0.20]
+        hp["kl_difference_limit"] = [0.02]
 
-        hpr_dict["critic_layers"] = [[128, 64, 32]]
-        hpr_dict["critic_activation_function"] = [torch.nn.ReLU]
-        hpr_dict["critic_output_function"] = [torch.nn.Tanh]
-        hpr_dict["critic_optimizer"] = [torch.optim.Adam]
-        hpr_dict["critic_optimizer_learning_rate"] = [0.005]
+        hp["actor_layers"] = [[128, 64, 32]]
+        hp["actor_activation_function"] = [torch.nn.ReLU]
+        hp["actor_output_function"] = [torch.nn.Tanh]
+        hp["actor_training_iterations"] = [10]
+        hp["actor_optimizer"] = [torch.optim.Adam]
+        hp["actor_optimizer_learning_rate"] = [0.005]
 
-        self.hpr_dict = hpr_dict
+        hp["critic_layers"] = [[128, 64, 32]]
+        hp["critic_activation_function"] = [torch.nn.ReLU]
+        hp["critic_output_function"] = [torch.nn.ReLU]
+        hp["actor_training_iterations"] = [10]
+        hp["critic_optimizer"] = [torch.optim.Adam]
+        hp["critic_optimizer_learning_rate"] = [0.005]
+
+        self.hp = hp
 
     def get_dict(self) -> OrderedDict:
         """
         function to get hyperparameter ranges as an OrderedDict
         :return: hyperparameter ranges in an OrderedDict
         """
-        return self.hpr_dict
+        return self.hp

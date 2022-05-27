@@ -2,13 +2,12 @@
 
 import logging
 import os
+from typing import NoReturn, Dict
 
 import numpy
 import torch
 import unityagents
 from unityagents import UnityEnvironment
-
-from src.exceptions.invalid_action_excetion import InvalidActionException
 
 
 class Environment:
@@ -43,6 +42,7 @@ class Environment:
         self._default_brain = self._environment.brains[self._environment.brain_names[0]]
 
         environment_info = self._environment.reset(train_mode=True)[self._default_brain.brain_name]
+
         self._number_of_agents = environment_info.agents
 
     def reset(self, brain: unityagents.brain.BrainParameters = None, train_environment: bool = True):
@@ -54,9 +54,10 @@ class Environment:
         """
         brain = brain if brain is not None else self._default_brain
         info = self._environment.reset(train_mode=train_environment)[brain.brain_name]
-        return info
+        state = info.vector_observations
+        return torch.tensor(state, dtype=torch.float)
 
-    def close(self) -> None:
+    def close(self) -> NoReturn:
         """
         function to close an environment
         :return: None (to write None on environment on this function call)
@@ -89,39 +90,50 @@ class Environment:
         brain = brain if brain is not None else self._default_brain
         return brain.vector_action_space_size
 
-    def get_action_range(self) -> [dict]:
+    def get_action_range(self) -> [Dict[str, float]]:
         """
         function to get the range (as dict containing "min" and "max") for each value of the state vector
         :return: a list of dicts containing "min" and "max"  for each value of the action vector
         """
-        return [{"min": -1, "max": 1} for _ in range(self.get_action_size())]
+        return [{"min": float(-1), "max": float(1)} for _ in range(self.get_action_size())]
 
-    def step(self, action_list: [float], brain: unityagents.brain.BrainParameters = None) -> {str: torch.Tensor}:
-        """
-        function to set an action for a brain in the environment
-        :param action_list: a list of actions for the agents
-        :param brain: brain for which the actions are set
-        :return: dict containing a dict with lists for the "next_state", the "reward" and the "done" for each agent
-        """
+    def step(self,
+             actions: torch.Tensor,
+             brain: unityagents.brain.BrainParameters = None) -> Dict[str, torch.Tensor]:
         brain = brain if brain is not None else self._default_brain
 
-        action_list = self._check_action(action_list=action_list)
-        info = self._environment.step(action_list)[brain.brain_name]
+        info = self._environment.step(actions.tolist())[brain.brain_name]
 
         return {"next_state": torch.tensor(info.vector_observations, dtype=torch.float),
                 "reward": torch.tensor(info.rewards, dtype=torch.float),
                 "done": torch.tensor(info.local_done, dtype=torch.float)}
 
-    def _check_action(self, action_list: torch.Tensor) -> numpy.ndarray:
-        """
-        function to check if an action is within the range
-        :param action_list: list of actions to check
-        :return: list of actions if all action are within the range, raising an exception otherwise
-        """
-        for action_array, action_range in zip(action_list, self.get_action_range()):
-            for action_value in action_array:
-                action_value = action_value.item()
-                if action_value < action_range["min"] or action_value > action_range["max"]:
-                    logging.debug("action value is not in range -1 to 1 (actual value: {})".format(action_value))
+    def clipped_step(self,
+                     actions: torch.Tensor,
+                     brain: unityagents.brain.BrainParameters = None) -> Dict[str, torch.Tensor]:
+        clip_actions = self.clip_actions(actions=actions)
+        return self.step(actions=clip_actions,
+                         brain=brain)
 
-        return action_list.cpu().numpy()
+    def clip_actions(self, actions: torch.Tensor) -> numpy.ndarray:
+        clipped_actions = []
+        for action in actions:
+
+            clipped_action = []
+
+            for action_value, action_range in zip(action, self.get_action_range()):
+
+                if action_range["min"] <= action_value <= action_range["max"]:
+                    clipped_action.append(action_value)
+
+                if action_value < action_range["min"]:
+                    clipped_action.append(action_range["min"])
+
+                if action_value > action_range["max"]:
+                    clipped_action.append(action_range["max"])
+
+            clipped_actions.append(clipped_action)
+
+        clipped_actions = torch.tensor(clipped_actions, dtype=torch.float)
+
+        return clipped_actions

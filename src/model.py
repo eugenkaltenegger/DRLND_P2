@@ -50,7 +50,7 @@ class Model(torch.nn.Module):
         """
         self.train(False)
 
-    def to_checkpoint(self) -> Dict:
+    def to_checkpoint_dict(self) -> Dict:
         return {"input_size": self._state_size,
                 "output_size": self._action_size,
                 "hidden_layers": self._layers,
@@ -58,7 +58,7 @@ class Model(torch.nn.Module):
                 "output_function": self._output_function,
                 "state_dict": self.state_dict()}
 
-    def from_checkpoint(self, checkpoint: Dict):
+    def from_checkpoint_dict(self, checkpoint: Dict):
         self.setup(state_size=checkpoint["input_size"],
                    action_size=checkpoint["output_size"],
                    layers=checkpoint["hidden_layers"],

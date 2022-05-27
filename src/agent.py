@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 
 import logging
-from typing import Tuple, List
+from typing import Tuple
 from typing import NoReturn
 
+import numpy
 import torch
 
-from torch.distributions import MultivariateNormal, Normal
+from torch.distributions import Categorical
 
 from src.model import Model
 
 
-class Agent:
+class Agent(torch.nn.Module):
     """
     class representing an PPO agent (with actor and critic)
     """
 
-    def __init__(self, device: torch.device, gamma: float, clip: float):
+    def __init__(self, device: torch.device, gamma: float, decay: float, clip: float, kl_difference_limit: float):
         """
         constructor for agent class
             this constructor requires the setup_actor and setup_critic function afterwards
@@ -24,19 +25,22 @@ class Agent:
         :param gamma:
         :param clip:
         """
+        super(Agent, self).__init__()
+
         self._device = device
 
         self._gamma = gamma
+        self._decay = decay
         self._clip = clip
+        self._kl_difference_limit = kl_difference_limit
 
         self._actor = None
         self._actor_optimizer = None
-
-        self._covariance_variance = None
-        self._covariance_matrix = None
+        self._actor_training_iterations = None
 
         self._critic = None
         self._critic_optimizer = None
+        self._critic_training_iterations = None
 
     def setup_actor(self,
                     state_size: int,
@@ -44,6 +48,7 @@ class Agent:
                     layers: [int],
                     activation_function: torch.nn.Module,
                     output_function: torch.nn.Module,
+                    training_iterations: int,
                     optimizer: torch.optim,
                     optimizer_learning_rate: float) -> NoReturn:
         """
@@ -53,6 +58,7 @@ class Agent:
         :param layers: list of layer sizes
         :param activation_function: function to process output after each layer (except last)
         :param output_function: function to process output after last layer
+        :param training_iterations: number of iterations of training with a given sample
         :param optimizer: optimizer for the model
         :param optimizer_learning_rate: learning rate of the optimizer
         :return:
@@ -63,10 +69,8 @@ class Agent:
                                     activation_function=activation_function,
                                     output_function=output_function)
         self._actor = self._actor.to(device=self._device)
+        self._actor_training_iterations = training_iterations
         self._actor_optimizer = optimizer(params=self._actor.parameters(), lr=optimizer_learning_rate)
-
-        self._covariance_variance = torch.full(size=(action_size,), fill_value=0.01).to(device=self._device)
-        self._covariance_matrix = torch.diag(self._covariance_variance).to(device=self._device)
 
     def setup_critic(self,
                      state_size: int,
@@ -74,6 +78,7 @@ class Agent:
                      layers: [int],
                      activation_function: torch.nn.Module,
                      output_function: torch.nn.Module,
+                     training_iterations: int,
                      optimizer: torch.optim,
                      optimizer_learning_rate: float) -> NoReturn:
         """
@@ -83,6 +88,7 @@ class Agent:
         :param layers: list of layer sizes
         :param activation_function: function to process output after each layer (except last)
         :param output_function: function to process output after last layer
+        :param training_iterations: number of iterations of training with a given sample
         :param optimizer: optimizer for the model
         :param optimizer_learning_rate: learning rate of the optimizer
         :return:
@@ -93,102 +99,113 @@ class Agent:
                                      activation_function=activation_function,
                                      output_function=output_function)
         self._critic = self._critic.to(device=self._device)
+        self._critic_training_iterations = training_iterations
         self._critic_optimizer = optimizer(params=self._critic.parameters(), lr=optimizer_learning_rate)
 
-    def get_future_rewards(self, rewards: List[torch.Tensor], gamma=None) -> List[torch.Tensor]:
-        # TODO: documentation
-        gamma = gamma if gamma is not None else self._gamma
+    def forward(self, states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        actions = self.get_action(states=states)
+        critics = self.get_critic(states=states)
+        return actions, critics
 
-        rewards_array = [rewards.numpy() for rewards in rewards]
-
-        rewards_per_instance = []
-        for instance in range(len(rewards_array[0])):
-            rewards_per_instance.append([reward_array[instance] for reward_array in rewards_array])
-
-        future_rewards_per_instance = []
-        for rewards in rewards_per_instance:
-            future_rewards_per_instance.append(self._get_future_rewards_for_single_instance(rewards=rewards, gamma=gamma))
-
-        future_rewards_per_run = []
-        for run in range(len(future_rewards_per_instance[0])):
-            future_rewards_per_run.append([rewards_list[run] for rewards_list in future_rewards_per_instance])
-
-        rewards_tensor_list = [torch.tensor(run, dtype=torch.float) for run in future_rewards_per_run]
-        return rewards_tensor_list
-
-    @staticmethod
-    def _get_future_rewards_for_single_instance(rewards: List, gamma: float) -> List:
-        rewards.reverse()
-        future_rewards = []
-        discounted_rewards = 0
-        for reward in rewards:
-            discounted_rewards = reward + gamma * discounted_rewards
-            future_rewards.append(discounted_rewards)
-        future_rewards.reverse()
-        return future_rewards
-
-    def get_action(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        # TODO: documentation
-        state = state.to(self._device)
-
-        distribution = MultivariateNormal(self._actor(state), self._covariance_matrix)
-        action = distribution.sample()
-        logarithmic_probability = distribution.log_prob(action)
-        return action.detach(), logarithmic_probability.detach()
-
-    def get_critic(self, states: torch.Tensor, actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        # TODO: documentation
+    def get_action(self, states: torch.Tensor) -> torch.Tensor:
         states = states.to(self._device)
-        actions = actions.to(self._device)
+        return self._actor(states)
 
-        critic = self._critic(states).squeeze()
-        distribution = MultivariateNormal(self._actor(states), self._covariance_matrix)
-        logarithmic_probability = distribution.log_prob(actions)
-        return critic, logarithmic_probability
+    def get_critic(self, states: torch.Tensor) -> torch.Tensor:
+        states = states.to(self._device)
+        return self._critic(states)
 
-    def update(self,
-               states: torch.Tensor,
-               actions: torch.Tensor,
-               logarithmic_probabilities: torch.Tensor,
-               future_rewards: torch.Tensor) -> NoReturn:
+    def train_agent(self,
+                    states: torch.Tensor,
+                    actions: torch.Tensor,
+                    rewards: torch.Tensor,
+                    advantages: torch.Tensor,
+                    old_log_probabilities: torch.Tensor) -> NoReturn:
+        # TODO: check of discount is handed correctly (track whole route of discount and rewards)
+        discount = self.calculate_discount(rewards=rewards)
+        self.train_actor(states=states,
+                         actions=actions,
+                         advantages=advantages,
+                         old_log_probabilities=old_log_probabilities)
+        self.train_critic(states=states,
+                          discount=discount)
 
-        states = [state.to(self._device) for state in states]
-        actions = [action.to(self._device) for action in actions]
-        logarithmic_probabilities = [lp.to(self._device) for lp in logarithmic_probabilities]
-        future_rewards = [future_reward.to(self._device) for future_reward in future_rewards]
+    def train_actor(self,
+                    states: torch.Tensor,
+                    actions: torch.Tensor,
+                    advantages: torch.Tensor,
+                    old_log_probabilities: torch.Tensor) -> NoReturn:
+        for _ in range(self._actor_training_iterations):
+            # TODO: probably same problem with logits as in rollout
+            logits = self._actor(states)
+            logits = Categorical(logits=logits)
+            new_log_probabilities = logits.log_prob(actions)
 
-        runs = zip(states, actions, logarithmic_probabilities, future_rewards)
+            policy_ratio = torch.exp(new_log_probabilities - old_log_probabilities)
+            clipped_policy_ratio = policy_ratio.clamp(1 - self._clip, 1 + self._clip)
 
-        for run in runs:
-            state = run[0]
-            action = run[1]
-            logarithmic_probability = run[2]
-            future_reward = run[3]
+            full_loss = policy_ratio * advantages
+            clipped_loss = clipped_policy_ratio * advantages
 
-            critic, curr_log_probs = self.get_critic(state, action)
-            advantage = future_reward - critic.detach()  # ALG STEP 5
-            # normalizing advantage
-            advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-10)
+            policy_loss = -torch.min(full_loss, clipped_loss).mean()
 
-            ratios = torch.exp(curr_log_probs - logarithmic_probability)
-
-            # calculate surrogate
-            surrogate_1 = ratios * advantage
-            surrogate_2 = torch.clamp(ratios, 1 - self._clip, 1 + self._clip) * advantage
-
-            # calculate actor loss and critic loss
-            actor_loss = (-torch.min(surrogate_1, surrogate_2)).mean()
-            critic_loss = torch.nn.MSELoss()(critic, future_reward)
-
-            # Calculate gradients and perform backward propagation for actor network
             self._actor_optimizer.zero_grad()
-            actor_loss.backward()
+            # TODO check if retain_graph or retain_graph
+            policy_loss.backward(keep_graph=True)
+            # policy_loss.backward(retain_graph=True)
             self._actor_optimizer.step()
 
-            # Calculate gradients and perform backward propagation for critic network
+            kl_difference = (old_log_probabilities - new_log_probabilities).mean()
+            if kl_difference > self._kl_difference_limit:
+                break
+
+    def train_critic(self,
+                     states: torch.Tensor,
+                     discount: torch.Tensor) -> NoReturn:
+        for _ in range(self._critic_training_iterations):
+            critics = self._critic(states)
+            loss = ((discount - critics) ** 2).mean()
+
             self._critic_optimizer.zero_grad()
-            critic_loss.backward()
+            # TODO check if retain_graph or retain_graph
+            loss.backward(keep_graph=True)
+            # loss.backward(retain_graph=True)
             self._critic_optimizer.step()
+
+    def calculate_discount(self,
+                           rewards: torch.Tensor,
+                           gamma: float = None) -> torch.Tensor:
+        gamma = gamma if gamma is not None else self._gamma
+
+        rewards_list = rewards.tolist()
+        discounted_rewards = [rewards_list[-1]]
+        for i in reversed(range(len(rewards_list) - 1)):
+            discounted_rewards.append(float(rewards[i]) + gamma * discounted_rewards[-1])
+        discounted_rewards.reverse()
+        return torch.tensor(discounted_rewards, dtype=torch.float)
+
+    def calculate_advantages(self,
+                             rewards: torch.Tensor,
+                             critics: torch.Tensor,
+                             gamma: float = None,
+                             decay: float = None) -> torch.Tensor:
+        gamma = gamma if gamma is not None else self._gamma
+        decay = decay if decay is not None else self._decay
+
+        rewards = rewards.cpu().detach().numpy()
+        rewards = [item for item in rewards]
+        critics = critics.cpu().detach().numpy()
+        critics = [item for sublist in critics for item in sublist]
+
+        next_values = numpy.concatenate([critics[1:], [0]])
+        deltas = [rew + gamma * next_val - val for rew, val, next_val in zip(rewards, critics, next_values)]
+
+        advantages = [deltas[-1]]
+        for i in reversed(range(len(deltas) - 1)):
+            advantages.append(deltas[i] + decay * gamma * advantages[-1])
+
+        advantages.reverse()
+        return torch.tensor(advantages, dtype=torch.float).to(device=self._device)
 
     def save(self, filename: str = None) -> NoReturn:
         """

@@ -14,31 +14,35 @@ class Hyperparameters:
         """
         constructor for hyperparameters class
         """
-        hp_dict = OrderedDict()
+        hp = OrderedDict()
 
-        hp_dict["episodes"] = 1000
-        hp_dict["steps_per_episode"] = 1000
+        hp["episodes"] = 1000
+        hp["rollout_steps"] = 60
 
-        hp_dict["gamma"] = 0.99
-        hp_dict["clip"] = 0.200
+        hp["gamma"] = 0.99
+        hp["decay"] = 0.99
+        hp["clip"] = 0.200
+        hp["kl_difference_limit"] = 0.020
 
-        hp_dict["actor_layers"] = [64, 32, 16]
-        hp_dict["actor_activation_function"] = torch.nn.ReLU
-        hp_dict["actor_output_function"] = torch.nn.Tanh
-        hp_dict["actor_optimizer"] = torch.optim.Adam
-        hp_dict["actor_optimizer_learning_rate"] = 0.99
+        hp["actor_layers"] = [64, 32, 16]
+        hp["actor_activation_function"] = torch.nn.ReLU
+        hp["actor_output_function"] = torch.nn.Tanh
+        hp["actor_training_iterations"] = 10
+        hp["actor_optimizer"] = torch.optim.Adam
+        hp["actor_optimizer_learning_rate"] = 0.99
 
-        hp_dict["critic_layers"] = [64, 32, 16]
-        hp_dict["critic_activation_function"] = torch.nn.ReLU
-        hp_dict["critic_output_function"] = torch.nn.ReLU
-        hp_dict["critic_optimizer"] = torch.optim.Adam
-        hp_dict["critic_optimizer_learning_rate"] = 0.99
+        hp["critic_layers"] = [64, 32, 16]
+        hp["critic_activation_function"] = torch.nn.ReLU
+        hp["critic_output_function"] = torch.nn.ReLU
+        hp["critic_training_iterations"] = 10
+        hp["critic_optimizer"] = torch.optim.Adam
+        hp["critic_optimizer_learning_rate"] = 0.99
 
-        self.hp_dict = hp_dict
+        self.hp = hp
 
     def get_dict(self) -> OrderedDict:
         """
         function to get hyperparameters as an OrderedDict
         :return: hyperparameters in an OrderedDict
         """
-        return self.hp_dict
+        return self.hp
