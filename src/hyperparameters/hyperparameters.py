@@ -17,22 +17,22 @@ class Hyperparameters:
         hp_dict = OrderedDict()
 
         hp_dict["episodes"] = 1000
-        hp_dict["steps_per_episode"] = 100
+        hp_dict["steps_per_episode"] = 1000
 
-        hp_dict["gamma"] = 0.995
+        hp_dict["gamma"] = 0.99
         hp_dict["clip"] = 0.200
 
-        hp_dict["actor_layers"] = [128, 64, 32]
+        hp_dict["actor_layers"] = [64, 32, 16]
         hp_dict["actor_activation_function"] = torch.nn.ReLU
         hp_dict["actor_output_function"] = torch.nn.Tanh
         hp_dict["actor_optimizer"] = torch.optim.Adam
-        hp_dict["actor_optimizer_learning_rate"] = 0.05
+        hp_dict["actor_optimizer_learning_rate"] = 0.99
 
-        hp_dict["critic_layers"] = [128, 64, 32]
+        hp_dict["critic_layers"] = [64, 32, 16]
         hp_dict["critic_activation_function"] = torch.nn.ReLU
-        hp_dict["critic_output_function"] = torch.nn.Tanh
+        hp_dict["critic_output_function"] = torch.nn.ReLU
         hp_dict["critic_optimizer"] = torch.optim.Adam
-        hp_dict["critic_optimizer_learning_rate"] = 0.05
+        hp_dict["critic_optimizer_learning_rate"] = 0.99
 
         self.hp_dict = hp_dict
 
