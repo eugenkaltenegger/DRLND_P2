@@ -122,9 +122,9 @@ class ContinuousControl:
             for rollout in range(rollouts):
                 states, actions, rewards, log_probs = self.rollout(rollout_state, steps)
                 critics, _ = self._agent.get_critics_and_log_probs(states=states, actions=actions)
-                critics = [critic.detach() for critic in critics]
+                # critics = [critic.detach() for critic in critics]
                 discounts = self._agent.calculate_discounts(rewards=rewards)
-                advantages = [discount - critic for discount, critic in zip(discounts, critics)]
+                advantages = [discount - critic.detach() for discount, critic in zip(discounts, critics)]
                 # normalize
                 advantages = [advantage - advantage.mean() / (advantage.std() + 1e-10) for advantage in advantages]
 
@@ -220,10 +220,14 @@ class ContinuousControl:
             if any(done):
                 break
 
-        states = [state.detach() for state in states]
-        actions = [action.detach() for action in actions]
-        actual_log_probs = [actual_log_prob.detach() for actual_log_prob in actual_log_probs]
-        rewards = [reward.detach() for reward in rewards]
+        # states = torch.cat(states)
+        # actions = torch.cat(actions)
+        # rewards = torch.cat(rewards)
+        # actual_log_probs = torch.cat(actual_log_probs)
+        # states = [state.detach() for state in states]
+        # actions = [action.detach() for action in actions]
+        # actual_log_probs = [actual_log_prob.detach() for actual_log_prob in actual_log_probs]
+        # rewards = [reward.detach() for reward in rewards]
 
         return states, actions, rewards, actual_log_probs
 

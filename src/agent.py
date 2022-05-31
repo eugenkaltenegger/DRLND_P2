@@ -113,7 +113,7 @@ class Agent:
         distribution = torch.distributions.MultivariateNormal(loc=mean, covariance_matrix=self._covariance_matrix)
         action = distribution.sample()
         log_probability = distribution.log_prob(action)
-        return action, log_probability
+        return action.detach(), log_probability.detach()
 
     def get_critic_and_log_prob(self,
                                 state: torch.Tensor,
