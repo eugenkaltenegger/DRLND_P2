@@ -8,8 +8,6 @@ import torch
 
 from collections import OrderedDict
 
-from torch.distributions import Categorical
-
 from src.agent import Agent
 from src.environment import Environment
 from src.hyperparameters.hyperparameters import Hyperparameters
@@ -47,14 +45,16 @@ class ContinuousControl:
 
         if mode == "train":
             self.train(environment_name=environment_name)
-            self.plot()
+            # self.plot()
 
         if mode == "tune":
-            self.tune(environment_name=environment_name)
-            self.plot()
+            pass
+            # self.tune(environment_name=environment_name)
+            # self.plot()
 
         if mode == "show":
-            self.show(environment_name=environment_name)
+            pass
+            # self.show(environment_name=environment_name)
 
     def reset_environment(self, environment_name, enable_graphics, train_environment):
         """
@@ -99,9 +99,11 @@ class ContinuousControl:
                                  optimizer=self._hp["critic_optimizer"],
                                  optimizer_learning_rate=self._hp["critic_optimizer_learning_rate"])
 
-    def train(self, environment_name, episodes: int = None):
-
+    def train(self, environment_name, episodes: int = None, rollouts: int = None, steps: int = None):
         episodes = episodes if episodes is not None else self._hp["episodes"]
+        rollouts = rollouts if rollouts is not None else self._hp["rollouts"]
+        steps = steps if steps is not None else self._hp["steps"]
+
         # setup environment
         enable_graphics = False
         train_environment = True
@@ -112,65 +114,88 @@ class ContinuousControl:
         self.reset_agent()
 
         # TODO: track rewards of single agents over each episode
+        episode_scores = []
         for episode in range(episodes):
-            states_list, actions_list, critics_list, rewards_list, advantages_list, actual_log_probabilities_list = self.rollout()
-            rollout = zip(states_list, actions_list, critics_list, rewards_list, advantages_list, actual_log_probabilities_list)
+            initial_state = self._environment.reset().to(device=self._device)
 
-            for states, actions, critics, rewards, advantages, actual_log_probabilities in rollout:
+            rollout_rewards = []
+            for rollout in range(rollouts):
+                # initial_state = self._environment.reset().to(device=self._device)
+                states, actions, critics, rewards, advantages, actual_log_probabilities \
+                    = self.rollout(initial_state, steps)
+                initial_state = states[-1]
+                for reward in rewards:
+                    rollout_rewards.append(reward)
 
-                self._agent.train_agent(states=states,
-                                        actions=actions,
-                                        rewards=rewards,
-                                        advantages=advantages,
-                                        old_log_probabilities=actual_log_probabilities)
+                rollout = zip(states, actions, critics, rewards, advantages, actual_log_probabilities)
 
-    # def tune(self, environment_name):
-    #     for hp_key, hpr_key in zip(self._hp.keys(), self._hpr.keys()):
-    #         if not hp_key == hpr_key:
-    #             logging.error("\rINVALID HYPERPARAMETERS FOR TUNING\n")
-    #             exit()
-    #
-    #     hp_iterators = [iter(hpr) for hpr in self._hpr.values()]
-    #     hp_combinations = itertools.product(*hp_iterators)
-    #
-    #     best_run_episode_count = None
-    #     best_run_score = None
-    #     best_run_hp = None
-    #
-    #     for hp_combination in hp_combinations:
-    #         self._hp = OrderedDict(zip(self._hpr.keys(), hp_combination))
-    #         current_run_scores, current_run_average_scores = self.train(environment_name)
-    #
-    #         current_run_episode_count = len(current_run_scores)
-    #         current_run_score = numpy.average(current_run_scores[-100:])
-    #         if best_run_episode_count is None or current_run_episode_count < best_run_episode_count:
-    #             best_run_episode_count = current_run_episode_count
-    #             best_run_score = current_run_score
-    #             best_run_hp = self._hp.copy()
-    #
-    #     logging.info("TUNING FINISHED")
-    #     logging.info("EPISODES: {}".format(best_run_episode_count))
-    #     logging.info("SCORE: {}".format(best_run_score))
-    #
-    #     ContinuousControl.print_hyperparameters(best_run_hp)
+                for states, actions, critics, rewards, advantages, actual_log_probabilities in rollout:
+                    self._agent.train_agent(states=states,
+                                            actions=actions,
+                                            rewards=rewards,
+                                            advantages=advantages,
+                                            old_log_probabilities=actual_log_probabilities)
 
-    # def show(self, environment_name):
-    #     # setup environment
-    #     enable_graphics = True
-    #     train_environment = False
-    #     self.reset_environment(environment_name=environment_name,
-    #                            enable_graphics=enable_graphics,
-    #                            train_environment=train_environment)
-    #     # TODO
-    #     pass
+            episode_score = self.calculate_score(rollout_rewards)
+            episode_scores.append(episode_score)
+            last_100 = episode_score[-100:] if len(episode_scores) > 100 else episode_scores
+            average = numpy.array(last_100).mean()
+            print("Episode: {:3d} with Score: {:5.5f} with Average: {:5.5f}".format(episode, episode_score, average))
 
-    # def plot(self):
-    #     # TODO
-    #     pass
+    def calculate_score(self, rewards):
+        total_agent_reward = [0 for _ in range(self._environment.number_of_agents())]
 
-    def rollout(self, rollout_steps: int = None):
-        rollout_steps = rollout_steps if rollout_steps is not None else self._hp["rollout_steps"]
+        for reward in rewards:
+            for index, agent_reward in enumerate(reward):
+                total_agent_reward[index] += float(agent_reward)
 
+        return numpy.array(total_agent_reward).mean()
+
+    def tune(self, environment_name):
+        for hp_key, hpr_key in zip(self._hp.keys(), self._hpr.keys()):
+            if not hp_key == hpr_key:
+                logging.error("\rINVALID HYPERPARAMETERS FOR TUNING\n")
+                exit()
+
+        hp_iterators = [iter(hpr) for hpr in self._hpr.values()]
+        hp_combinations = itertools.product(*hp_iterators)
+
+        best_run_episode_count = None
+        best_run_score = None
+        best_run_hp = None
+
+        for hp_combination in hp_combinations:
+            self._hp = OrderedDict(zip(self._hpr.keys(), hp_combination))
+            current_run_scores, current_run_average_scores = self.train(environment_name)
+
+            current_run_episode_count = len(current_run_scores)
+            current_run_score = numpy.average(current_run_scores[-100:])
+            if best_run_episode_count is None or current_run_episode_count < best_run_episode_count:
+                best_run_episode_count = current_run_episode_count
+                best_run_score = current_run_score
+                best_run_hp = self._hp.copy()
+
+        logging.info("TUNING FINISHED")
+        logging.info("EPISODES: {}".format(best_run_episode_count))
+        logging.info("SCORE: {}".format(best_run_score))
+
+        ContinuousControl.print_hyperparameters(best_run_hp)
+
+    def show(self, environment_name):
+        # setup environment
+        enable_graphics = True
+        train_environment = False
+        self.reset_environment(environment_name=environment_name,
+                               enable_graphics=enable_graphics,
+                               train_environment=train_environment)
+        # TODO
+        pass
+
+    def plot(self):
+        # TODO
+        pass
+
+    def rollout(self, initial_state: torch.Tensor, steps: int):
         states = []
         actions = []
         critics = []
@@ -178,45 +203,34 @@ class ContinuousControl:
         advantages = []
         actual_log_probabilities = []
 
-        state = self._environment.reset().to(device=self._device)
-
-        for _ in range(rollout_steps):
-            # TODO: logits is in shape 20,4 but action in in shape 20 (loosing the 4 dimensions of the aciton space) -> fix this
-            logits, critic = self._agent(state)
-
-            logits = Categorical(logits=logits)
-            action = logits.sample()
-            actual_log_probability = logits.log_prob(action)
-            # actual_log_probability = actual_log_probability.item()
-            #
-            # action = action.item()
-            # critic = critic.item()
+        for _ in range(steps):
+            action, actual_log_probability = self._agent.get_action(initial_state)
+            critic, _ = self._agent.get_critic(initial_state, action)
 
             step = self._environment.step(action)
-            # step = self._environment.step(action)
-            next_state = step["next_state"]
-            reward = step["reward"]
-            done = step["done"]
+            next_state = step["next_state"].to(self._device)
+            reward = step["reward"].to(self._device)
+            done = step["done"].to(self._device)
             advantage = self._agent.calculate_advantages(rewards=reward, critics=critic)
 
-            states.append(state)
+            states.append(initial_state)
             actions.append(action)
             critics.append(critic)
             rewards.append(reward)
             advantages.append(advantage)
             actual_log_probabilities.append(actual_log_probability)
 
-            state = next_state
+            initial_state = next_state
 
             if any(done):
                 break
 
-        # torch.tensor(states, dtype=torch.float).to(device=self._device)
-        # torch.tensor(actions, dtype=torch.float).to(device=self._device)
-        # torch.tensor(critics, dtype=torch.float).to(device=self._device)
-        # torch.tensor(rewards, dtype=torch.float).to(device=self._device)
-        # torch.tensor(advantages, dtype=torch.float).to(device=self._device)
-        # torch.tensor(actual_log_probabilities, dtype=torch.float).to(device=self._device)
+        states = [state.detach() for state in states]
+        actions = [action.detach() for action in actions]
+        critics = [critic.detach() for critic in critics]
+        rewards = [reward.detach() for reward in rewards]
+        advantages = [advantage.detach() for advantage in advantages]
+        actual_log_probabilities = [actual_log_probability.detach() for actual_log_probability in actual_log_probabilities]
 
         return states, actions, critics, rewards, advantages, actual_log_probabilities
 

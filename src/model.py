@@ -33,8 +33,8 @@ class Model(torch.nn.Module):
         :param state: state to process
         :return: action to take
         """
-        state = self._model_sequential(state)
-        return self._output_function(state)
+        activation = self._model_sequential(state)
+        return self._output_function(activation)
 
     def training_mode(self):
         """

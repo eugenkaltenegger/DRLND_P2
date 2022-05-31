@@ -12,7 +12,7 @@ from torch.distributions import Categorical
 from src.model import Model
 
 
-class Agent(torch.nn.Module):
+class Agent:
     """
     class representing an PPO agent (with actor and critic)
     """
@@ -37,6 +37,8 @@ class Agent(torch.nn.Module):
         self._actor = None
         self._actor_optimizer = None
         self._actor_training_iterations = None
+        self._covariance = None
+        self._covariance_matrix = None
 
         self._critic = None
         self._critic_optimizer = None
@@ -72,6 +74,9 @@ class Agent(torch.nn.Module):
         self._actor_training_iterations = training_iterations
         self._actor_optimizer = optimizer(params=self._actor.parameters(), lr=optimizer_learning_rate)
 
+        self._covariance = torch.full(size=(action_size,), fill_value=0.5).to(device=self._device)
+        self._covariance_matrix = torch.diag(self._covariance).to(device=self._device)
+
     def setup_critic(self,
                      state_size: int,
                      action_size: int,
@@ -102,18 +107,19 @@ class Agent(torch.nn.Module):
         self._critic_training_iterations = training_iterations
         self._critic_optimizer = optimizer(params=self._critic.parameters(), lr=optimizer_learning_rate)
 
-    def forward(self, states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        actions = self.get_action(states=states)
-        critics = self.get_critic(states=states)
-        return actions, critics
+    def get_action(self, states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        mean = self._actor(states)
+        distribution = torch.distributions.MultivariateNormal(loc=mean, covariance_matrix=self._covariance_matrix)
+        action = distribution.sample()
+        log_probability = distribution.log_prob(action)
+        return action, log_probability
 
-    def get_action(self, states: torch.Tensor) -> torch.Tensor:
-        states = states.to(self._device)
-        return self._actor(states)
-
-    def get_critic(self, states: torch.Tensor) -> torch.Tensor:
-        states = states.to(self._device)
-        return self._critic(states)
+    def get_critic(self, state: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        critic = self._critic(state)
+        mean = self._actor(state)
+        distribution = torch.distributions.MultivariateNormal(loc=mean, covariance_matrix=self._covariance_matrix)
+        log_probability = distribution.log_prob(action)
+        return critic, log_probability
 
     def train_agent(self,
                     states: torch.Tensor,
@@ -122,24 +128,21 @@ class Agent(torch.nn.Module):
                     advantages: torch.Tensor,
                     old_log_probabilities: torch.Tensor) -> NoReturn:
         # TODO: check of discount is handed correctly (track whole route of discount and rewards)
-        discount = self.calculate_discount(rewards=rewards)
         self.train_actor(states=states,
                          actions=actions,
                          advantages=advantages,
                          old_log_probabilities=old_log_probabilities)
         self.train_critic(states=states,
-                          discount=discount)
+                          rewards=rewards)
 
     def train_actor(self,
                     states: torch.Tensor,
                     actions: torch.Tensor,
                     advantages: torch.Tensor,
                     old_log_probabilities: torch.Tensor) -> NoReturn:
+        torch.autograd.set_detect_anomaly(True)
         for _ in range(self._actor_training_iterations):
-            # TODO: probably same problem with logits as in rollout
-            logits = self._actor(states)
-            logits = Categorical(logits=logits)
-            new_log_probabilities = logits.log_prob(actions)
+            critics, new_log_probabilities = self.get_critic(state=states, action=actions)
 
             policy_ratio = torch.exp(new_log_probabilities - old_log_probabilities)
             clipped_policy_ratio = policy_ratio.clamp(1 - self._clip, 1 + self._clip)
@@ -150,9 +153,7 @@ class Agent(torch.nn.Module):
             policy_loss = -torch.min(full_loss, clipped_loss).mean()
 
             self._actor_optimizer.zero_grad()
-            # TODO check if retain_graph or retain_graph
-            policy_loss.backward(keep_graph=True)
-            # policy_loss.backward(retain_graph=True)
+            policy_loss.backward(retain_graph=True)
             self._actor_optimizer.step()
 
             kl_difference = (old_log_probabilities - new_log_probabilities).mean()
@@ -161,15 +162,14 @@ class Agent(torch.nn.Module):
 
     def train_critic(self,
                      states: torch.Tensor,
-                     discount: torch.Tensor) -> NoReturn:
+                     rewards: torch.Tensor) -> NoReturn:
+        discount = self.calculate_discount(rewards=rewards).to(device=self._device)
         for _ in range(self._critic_training_iterations):
             critics = self._critic(states)
             loss = ((discount - critics) ** 2).mean()
 
             self._critic_optimizer.zero_grad()
-            # TODO check if retain_graph or retain_graph
-            loss.backward(keep_graph=True)
-            # loss.backward(retain_graph=True)
+            loss.backward(retain_graph=True)
             self._critic_optimizer.step()
 
     def calculate_discount(self,

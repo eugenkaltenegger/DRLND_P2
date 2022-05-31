@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import NoReturn, Dict
+from typing import NoReturn, Dict, List
 
 import numpy
 import torch
@@ -43,7 +43,7 @@ class Environment:
 
         environment_info = self._environment.reset(train_mode=True)[self._default_brain.brain_name]
 
-        self._number_of_agents = environment_info.agents
+        self._agents = environment_info.agents
 
     def reset(self, brain: unityagents.brain.BrainParameters = None, train_environment: bool = True):
         """
@@ -65,12 +65,12 @@ class Environment:
         self._environment.close()
         return None
 
-    def get_number_of_agents(self) -> int:
+    def number_of_agents(self) -> int:
         """
         function to get the number of agents in the environment
         :return: number of agents in the environment
         """
-        return self._number_of_agents
+        return len(self._agents)
 
     def get_state_size(self, brain: unityagents.brain.BrainParameters = None) -> int:
         """
@@ -98,11 +98,13 @@ class Environment:
         return [{"min": float(-1), "max": float(1)} for _ in range(self.get_action_size())]
 
     def step(self,
-             actions: torch.Tensor,
+             actions: List[torch.Tensor],
              brain: unityagents.brain.BrainParameters = None) -> Dict[str, torch.Tensor]:
         brain = brain if brain is not None else self._default_brain
 
-        info = self._environment.step(actions.tolist())[brain.brain_name]
+        actions = [action.tolist() for action in actions]
+
+        info = self._environment.step(actions)[brain.brain_name]
 
         return {"next_state": torch.tensor(info.vector_observations, dtype=torch.float),
                 "reward": torch.tensor(info.rewards, dtype=torch.float),
