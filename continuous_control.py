@@ -116,29 +116,30 @@ class ContinuousControl:
         # TODO: track rewards of single agents over each episode
         episode_scores = []
         for episode in range(episodes):
-            initial_state = self._environment.reset().to(device=self._device)
+            rollout_state = self._environment.reset().to(device=self._device)
 
-            rollout_rewards = []
+            episode_rewards = []
             for rollout in range(rollouts):
-                # initial_state = self._environment.reset().to(device=self._device)
-                states, actions, critics, rewards, advantages, actual_log_probabilities \
-                    = self.rollout(initial_state, steps)
-                initial_state = states[-1]
-                for reward in rewards:
-                    rollout_rewards.append(reward)
+                states, actions, rewards, log_probs = self.rollout(rollout_state, steps)
+                critics, _ = self._agent.get_critics_and_log_probs(states=states, actions=actions)
+                critics = [critic.detach() for critic in critics]
+                discounts = self._agent.calculate_discounts(rewards=rewards)
+                advantages = [discount - critic for discount, critic in zip(discounts, critics)]
+                # normalize
+                advantages = [advantage - advantage.mean() / (advantage.std() + 1e-10) for advantage in advantages]
 
-                rollout = zip(states, actions, critics, rewards, advantages, actual_log_probabilities)
+                advantages = [advantage.detach() for advantage in advantages]
 
-                for states, actions, critics, rewards, advantages, actual_log_probabilities in rollout:
-                    self._agent.train_agent(states=states,
-                                            actions=actions,
-                                            rewards=rewards,
-                                            advantages=advantages,
-                                            old_log_probabilities=actual_log_probabilities)
+                # set state for next iteration
+                rollout_state = states[-1]
+                # append rewards to
+                episode_rewards = episode_rewards + rewards
 
-            episode_score = self.calculate_score(rollout_rewards)
+                self._agent.train_agent(states, actions, rewards, log_probs, advantages)
+
+            episode_score = self.calculate_score(episode_rewards)
             episode_scores.append(episode_score)
-            last_100 = episode_score[-100:] if len(episode_scores) > 100 else episode_scores
+            last_100 = episode_scores[-100:] if len(episode_scores) > 100 else episode_scores
             average = numpy.array(last_100).mean()
             print("Episode: {:3d} with Score: {:5.5f} with Average: {:5.5f}".format(episode, episode_score, average))
 
@@ -195,44 +196,36 @@ class ContinuousControl:
         # TODO
         pass
 
-    def rollout(self, initial_state: torch.Tensor, steps: int):
+    def rollout(self, state: torch.Tensor, steps: int):
         states = []
         actions = []
-        critics = []
+        actual_log_probs = []
         rewards = []
-        advantages = []
-        actual_log_probabilities = []
 
         for _ in range(steps):
-            action, actual_log_probability = self._agent.get_action(initial_state)
-            critic, _ = self._agent.get_critic(initial_state, action)
+            action, actual_log_prob = self._agent.get_action_and_log_prob(state)
 
             step = self._environment.step(action)
             next_state = step["next_state"].to(self._device)
             reward = step["reward"].to(self._device)
             done = step["done"].to(self._device)
-            advantage = self._agent.calculate_advantages(rewards=reward, critics=critic)
 
-            states.append(initial_state)
+            states.append(state)
             actions.append(action)
-            critics.append(critic)
+            actual_log_probs.append(actual_log_prob)
             rewards.append(reward)
-            advantages.append(advantage)
-            actual_log_probabilities.append(actual_log_probability)
 
-            initial_state = next_state
+            state = next_state
 
             if any(done):
                 break
 
         states = [state.detach() for state in states]
         actions = [action.detach() for action in actions]
-        critics = [critic.detach() for critic in critics]
+        actual_log_probs = [actual_log_prob.detach() for actual_log_prob in actual_log_probs]
         rewards = [reward.detach() for reward in rewards]
-        advantages = [advantage.detach() for advantage in advantages]
-        actual_log_probabilities = [actual_log_probability.detach() for actual_log_probability in actual_log_probabilities]
 
-        return states, actions, critics, rewards, advantages, actual_log_probabilities
+        return states, actions, rewards, actual_log_probs
 
     @staticmethod
     def print_hyperparameters(hyperparameters):
