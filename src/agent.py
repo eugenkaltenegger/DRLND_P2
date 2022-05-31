@@ -175,9 +175,8 @@ class Agent:
                      discounts: List[torch.Tensor]) -> NoReturn:
         for critic, discount in zip(critics, discounts):
             for _ in range(self._critic_training_iterations):
-                # loss = torch.nn.MSELoss()(critic, discount)
+                loss = torch.nn.MSELoss()(critic, discount)
                 # loss.requires_grad = True
-
 
                 self._critic_optimizer.zero_grad()
                 loss.backward()
