@@ -26,7 +26,7 @@ class Hyperparameters:
         hp["kl_difference_limit"] = 0.200
 
         hp["actor_layers"] = [32, 32]
-        hp["actor_activation_function"] = torch.nn.ReLU
+        hp["actor_activation_function"] = torch.nn.Tanh
         hp["actor_output_function"] = torch.nn.Tanh
         hp["actor_training_iterations"] = 1
         hp["actor_optimizer"] = torch.optim.Adam

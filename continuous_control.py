@@ -199,8 +199,8 @@ class ContinuousControl:
     def rollout(self, state: torch.Tensor, steps: int):
         states = []
         actions = []
-        actual_log_probs = []
         rewards = []
+        log_probs = []
 
         for _ in range(steps):
             action, actual_log_prob = self._agent.get_action_and_log_prob(state)
@@ -210,26 +210,20 @@ class ContinuousControl:
             reward = step["reward"].to(self._device)
             done = step["done"].to(self._device)
 
+            actual_log_prob = actual_log_prob.reshape(20, 1)
+            reward = reward.reshape(20, 1)
+
             states.append(state)
             actions.append(action)
-            actual_log_probs.append(actual_log_prob)
             rewards.append(reward)
+            log_probs.append(actual_log_prob)
 
             state = next_state
 
             if any(done):
                 break
 
-        # states = torch.cat(states)
-        # actions = torch.cat(actions)
-        # rewards = torch.cat(rewards)
-        # actual_log_probs = torch.cat(actual_log_probs)
-        # states = [state.detach() for state in states]
-        # actions = [action.detach() for action in actions]
-        # actual_log_probs = [actual_log_prob.detach() for actual_log_prob in actual_log_probs]
-        # rewards = [reward.detach() for reward in rewards]
-
-        return states, actions, rewards, actual_log_probs
+        return states, actions, rewards, log_probs
 
     @staticmethod
     def print_hyperparameters(hyperparameters):

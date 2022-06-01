@@ -133,8 +133,6 @@ class Agent:
             critic, log_prob = self.get_critic_and_log_prob(state=state, action=action)
             critics.append(critic)
             log_probs.append(log_prob)
-        # critics = [critic.detach() for critic in critics]
-        # log_probs = [log_prob.detach() for log_prob in log_probs]
         return critics, log_probs
 
     def train_agent(self,
@@ -143,8 +141,16 @@ class Agent:
                     rewards: List[torch.Tensor],
                     old_log_probs: List[torch.Tensor],
                     advantages: List[torch.Tensor]) -> NoReturn:
-        torch.autograd.set_detect_anomaly(True)
         critics, new_log_probs = self.get_critics_and_log_probs(states=states, actions=actions)
+
+        states = torch.cat(states)
+        actions = torch.cat(actions)
+        rewards = torch.cat(rewards)
+        old_log_probs = torch.cat(old_log_probs)
+        advantages = torch.cat(advantages)
+        critics = torch.cat(critics)
+        new_log_probs = torch.cat(new_log_probs)
+
         self.train_actor(advantages=advantages,
                          new_log_probs=new_log_probs,
                          old_log_probs=old_log_probs)
@@ -155,32 +161,28 @@ class Agent:
                     advantages: List[torch.Tensor],
                     new_log_probs: List[torch.Tensor],
                     old_log_probs: List[torch.Tensor]) -> NoReturn:
-        for advantage, new_log_prob, old_log_prob in zip(advantages, new_log_probs, old_log_probs):
-            for _ in range(self._actor_training_iterations):
-                policy_ratio = torch.exp(new_log_prob - old_log_prob)
-                clipped_policy_ratio = policy_ratio.clamp(1 - self._clip, 1 + self._clip)
+        for _ in range(self._actor_training_iterations):
+            policy_ratio = torch.exp(new_log_probs - old_log_probs)
+            clipped_policy_ratio = policy_ratio.clamp(1 - self._clip, 1 + self._clip)
 
-                full_loss = policy_ratio * advantage
-                clipped_loss = clipped_policy_ratio * advantage
+            full_loss = policy_ratio * advantages
+            clipped_loss = clipped_policy_ratio * advantages
 
-                policy_loss = -torch.min(full_loss, clipped_loss).mean()
-                # policy_loss.requires_grad = True
+            policy_loss = -torch.min(full_loss, clipped_loss).mean()
 
-                self._actor_optimizer.zero_grad()
-                policy_loss.backward(retain_graph=True)
-                self._actor_optimizer.step()
+            self._actor_optimizer.zero_grad()
+            policy_loss.backward(retain_graph=True)
+            self._actor_optimizer.step()
 
     def train_critic(self,
                      critics: List[torch.Tensor],
                      discounts: List[torch.Tensor]) -> NoReturn:
-        for critic, discount in zip(critics, discounts):
-            for _ in range(self._critic_training_iterations):
-                loss = torch.nn.MSELoss()(critic, discount)
-                # loss.requires_grad = True
+        for _ in range(self._critic_training_iterations):
+            loss = (discounts - critics).pow(2).mean()
 
-                self._critic_optimizer.zero_grad()
-                loss.backward()
-                self._critic_optimizer.step()
+            self._critic_optimizer.zero_grad()
+            loss.backward()
+            self._critic_optimizer.step()
 
     def calculate_discounts(self,
                             rewards: List[torch.Tensor],
