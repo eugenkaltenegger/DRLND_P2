@@ -17,8 +17,11 @@ class Hyperparameters:
         hp = OrderedDict()
 
         hp["episodes"] = 1000
-        hp["rollouts"] = 100
+        hp["rollouts"] = 10
         hp["steps"] = 10
+
+        hp["trajectories_per_episode"] = 10
+        hp["steps_per_trajectory"] = 100
 
         hp["gamma"] = 0.99
         hp["decay"] = 0.99
@@ -31,6 +34,7 @@ class Hyperparameters:
         hp["actor_training_iterations"] = 1
         hp["actor_optimizer"] = torch.optim.Adam
         hp["actor_optimizer_learning_rate"] = 0.005
+        hp["actor_covariance"] = 1.0
 
         hp["critic_layers"] = [32, 32]
         hp["critic_activation_function"] = torch.nn.ReLU

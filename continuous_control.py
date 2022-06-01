@@ -6,7 +6,7 @@ import numpy
 import sys
 import torch
 
-from collections import OrderedDict
+from collections import OrderedDict, deque
 
 from src.agent import Agent
 from src.environment import Environment
@@ -89,7 +89,8 @@ class ContinuousControl:
                                 output_function=self._hp["actor_output_function"],
                                 training_iterations=self._hp["actor_training_iterations"],
                                 optimizer=self._hp["actor_optimizer"],
-                                optimizer_learning_rate=self._hp["actor_optimizer_learning_rate"])
+                                optimizer_learning_rate=self._hp["actor_optimizer_learning_rate"],
+                                covariance=self._hp["actor_covariance"])
         self._agent.setup_critic(state_size=critic_state_size,
                                  action_size=critic_action_size,
                                  layers=self._hp["critic_layers"],
@@ -104,6 +105,9 @@ class ContinuousControl:
         rollouts = rollouts if rollouts is not None else self._hp["rollouts"]
         steps = steps if steps is not None else self._hp["steps"]
 
+        trajectories_per_episode = self._hp["trajectories_per_episode"]
+        steps = self._hp["steps_per_trajectory"]
+
         # setup environment
         enable_graphics = False
         train_environment = True
@@ -116,32 +120,37 @@ class ContinuousControl:
         # TODO: track rewards of single agents over each episode
         episode_scores = []
         for episode in range(episodes):
-            rollout_state = self._environment.reset().to(device=self._device)
-
             episode_rewards = []
-            for rollout in range(rollouts):
-                states, actions, rewards, log_probs = self.rollout(rollout_state, steps)
-                critics, _ = self._agent.get_critics_and_log_probs(states=states, actions=actions)
-                # critics = [critic.detach() for critic in critics]
-                discounts = self._agent.calculate_discounts(rewards=rewards)
-                advantages = [discount - critic.detach() for discount, critic in zip(discounts, critics)]
-                # normalize
-                advantages = [advantage - advantage.mean() / (advantage.std() + 1e-10) for advantage in advantages]
+            state = self._environment.reset().to(device=self._device)
+            for trajectory in range(trajectories_per_episode):
+                states, actions, log_probs, rewards, rewards_to_go = self.collect_trajectory(state=state,
+                                                                                             steps=steps)
+                critics, _ = self._agent.get_critics_and_log_probs(states=states,
+                                                                   actions=actions)
+                advantages = rewards_to_go - critics.detach()
+                normalized_advantages = ( advantages - advantages.mean() ) / ( advantages.std() + 1e-10 )
 
-                advantages = [advantage.detach() for advantage in advantages]
+                self._agent.train_agent(states=states,
+                                        actions=actions,
+                                        rewards_to_go=rewards_to_go,
+                                        old_log_probs=log_probs,
+                                        advantages=normalized_advantages)
 
-                # set state for next iteration
-                rollout_state = states[-1]
-                # append rewards to
-                episode_rewards = episode_rewards + rewards
-
-                self._agent.train_agent(states, actions, rewards, log_probs, advantages)
+                rewards = rewards.cpu().numpy()
+                for reward in rewards:
+                    episode_rewards.append(reward.tolist())
 
             episode_score = self.calculate_score(episode_rewards)
             episode_scores.append(episode_score)
-            last_100 = episode_scores[-100:] if len(episode_scores) > 100 else episode_scores
-            average = numpy.array(last_100).mean()
-            print("Episode: {:3d} with Score: {:5.5f} with Average: {:5.5f}".format(episode, episode_score, average))
+
+            if len(episode_scores) < 100:
+                print("episode: {:4d} - score: {:3.5f} - below 100 iterations".format(episode, self.calculate_score(episode_rewards)))
+
+            if len(episode_scores) >= 100:
+                temp = reversed(episode_scores)
+                mean_over_100 = numpy.array(temp[0:99]).mean()
+                print("episode: {:4d} score: {:3.5f} - mean over 100: {}".format(episode, self.calculate_score(
+                    episode_rewards, mean_over_100)))
 
     def calculate_score(self, rewards):
         total_agent_reward = [0 for _ in range(self._environment.number_of_agents())]
@@ -205,13 +214,10 @@ class ContinuousControl:
         for _ in range(steps):
             action, actual_log_prob = self._agent.get_action_and_log_prob(state)
 
-            step = self._environment.step(action)
-            next_state = step["next_state"].to(self._device)
-            reward = step["reward"].to(self._device)
-            done = step["done"].to(self._device)
-
-            actual_log_prob = actual_log_prob.reshape(20, 1)
-            reward = reward.reshape(20, 1)
+            next_state, reward, done = self._environment.step(action)
+            next_state = next_state.to(self._device)
+            reward = reward.to(self._device)
+            done = done.to(self._device)
 
             states.append(state)
             actions.append(action)
@@ -224,6 +230,32 @@ class ContinuousControl:
                 break
 
         return states, actions, rewards, log_probs
+
+    def collect_trajectory(self, state: torch.Tensor, steps: int):
+        states = []
+        actions = []
+        log_probs = []
+        rewards = []
+
+        for step in range(steps):
+            action, log_prob = self._agent.get_action_and_log_prob(state=state)
+            follow_up_state, reward, done = self._environment.step(action=action)
+
+            states.append(state.cpu().numpy())
+            actions.append(action.cpu().numpy())
+            log_probs.append(log_prob.cpu().numpy())
+            rewards.append(reward.cpu().numpy())
+
+            state = follow_up_state
+        # TODO: calculate rewards to go (and rename them)
+        rewards_to_go = self._agent.calculate_rewards_to_go(rewards)
+
+        states = torch.tensor(states, dtype=torch.float)
+        actions = torch.tensor(actions, dtype=torch.float)
+        log_probs = torch.tensor(log_probs, dtype=torch.float)
+        rewards = torch.tensor(rewards, dtype=torch.float)
+        rewards_to_go = torch.tensor(rewards_to_go, dtype=torch.float)
+        return states, actions, log_probs, rewards, rewards_to_go
 
     @staticmethod
     def print_hyperparameters(hyperparameters):

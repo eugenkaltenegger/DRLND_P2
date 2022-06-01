@@ -2,9 +2,8 @@
 
 import logging
 import os
-from typing import NoReturn, Dict, List
+from typing import NoReturn, Dict, List, Tuple
 
-import numpy
 import torch
 import unityagents
 from unityagents import UnityEnvironment
@@ -98,26 +97,26 @@ class Environment:
         return [{"min": float(-1), "max": float(1)} for _ in range(self.get_action_size())]
 
     def step(self,
-             actions: List[torch.Tensor],
-             brain: unityagents.brain.BrainParameters = None) -> Dict[str, torch.Tensor]:
+             action: torch.Tensor,
+             brain: unityagents.brain.BrainParameters = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         brain = brain if brain is not None else self._default_brain
 
-        actions = [action.tolist() for action in actions]
+        action = action.tolist()
 
-        info = self._environment.step(actions)[brain.brain_name]
+        info = self._environment.step(action)[brain.brain_name]
 
-        return {"next_state": torch.tensor(info.vector_observations, dtype=torch.float),
-                "reward": torch.tensor(info.rewards, dtype=torch.float),
-                "done": torch.tensor(info.local_done, dtype=torch.float)}
+        state = torch.tensor(info.vector_observations, dtype=torch.float)
+        reward = torch.tensor(info.rewards, dtype=torch.float)
+        done = torch.tensor(info.local_done, dtype=torch.float)
+        return state, reward, done
 
     def clipped_step(self,
                      actions: torch.Tensor,
-                     brain: unityagents.brain.BrainParameters = None) -> Dict[str, torch.Tensor]:
+                     brain: unityagents.brain.BrainParameters = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         clip_actions = self.clip_actions(actions=actions)
-        return self.step(actions=clip_actions,
-                         brain=brain)
+        return self.step(actions=clip_actions, brain=brain)
 
-    def clip_actions(self, actions: torch.Tensor) -> numpy.ndarray:
+    def clip_actions(self, actions: torch.Tensor) -> torch.Tensor:
         clipped_actions = []
         for action in actions:
 
