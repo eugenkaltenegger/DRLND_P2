@@ -250,11 +250,11 @@ class ContinuousControl:
         # TODO: calculate rewards to go (and rename them)
         rewards_to_go = self._agent.calculate_rewards_to_go(rewards)
 
-        states = torch.tensor(states, dtype=torch.float)
-        actions = torch.tensor(actions, dtype=torch.float)
-        log_probs = torch.tensor(log_probs, dtype=torch.float)
-        rewards = torch.tensor(rewards, dtype=torch.float)
-        rewards_to_go = torch.tensor(rewards_to_go, dtype=torch.float)
+        states = torch.tensor(numpy.array(states), dtype=torch.float)
+        actions = torch.tensor(numpy.array(actions), dtype=torch.float)
+        log_probs = torch.tensor(numpy.array(log_probs), dtype=torch.float)
+        rewards = torch.tensor(numpy.array(rewards), dtype=torch.float)
+        rewards_to_go = torch.tensor(numpy.array(rewards_to_go), dtype=torch.float)
         return states, actions, log_probs, rewards, rewards_to_go
 
     @staticmethod

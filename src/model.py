@@ -34,7 +34,11 @@ class Model(torch.nn.Module):
         :return: action to take
         """
         activation = self._model_sequential(state)
-        return self._output_function(activation)
+        if self._output_function is None:
+            output = activation
+        if self._output_function is not None:
+            output = self._output_function(activation)
+        return output
 
     def training_mode(self):
         """
@@ -87,7 +91,7 @@ class Model(torch.nn.Module):
         self._action_size = action_size
         self._layers = layers
         self._activation_function = activation_function()
-        self._output_function = output_function()
+        self._output_function = output_function() if output_function is not None else None
 
         input_size = self._state_size
         output_size = self._action_size
