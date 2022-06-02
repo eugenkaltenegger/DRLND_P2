@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
 import logging
-from typing import Tuple, List
-from typing import NoReturn
-
-import numpy
 import torch
 
-from torch.distributions import Categorical
+from typing import Tuple
+from typing import NoReturn
+
+from torch import Tensor
 
 from src.model import Model
 
@@ -102,7 +101,7 @@ class Agent:
         self._critic_optimizer = optimizer(params=self._critic.parameters(), lr=optimizer_learning_rate)
 
     def get_action_and_log_prob(self,
-                                state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                                state: Tensor) -> Tuple[Tensor, Tensor]:
         mean = self._actor(state)
         distribution = torch.distributions.MultivariateNormal(loc=mean, covariance_matrix=self._covariance_matrix)
         action = distribution.sample()
@@ -110,8 +109,8 @@ class Agent:
         return action.detach(), log_probability.detach()
 
     def get_critics_and_log_probs(self,
-                                  states: torch.Tensor,
-                                  actions: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                                  states: Tensor,
+                                  actions: Tensor) -> Tuple[Tensor, Tensor]:
         critics = self._critic(states)
         means = self._actor(states)
         distributions = torch.distributions.MultivariateNormal(loc=means, covariance_matrix=self._covariance_matrix)
@@ -120,11 +119,11 @@ class Agent:
         return critics, log_probs
 
     def train_agent(self,
-                    states: torch.Tensor,
-                    actions: torch.Tensor,
-                    rewards_to_go: torch.Tensor,
-                    old_log_probs: torch.Tensor,
-                    advantages: torch.Tensor,
+                    states: Tensor,
+                    actions: Tensor,
+                    rewards_to_go: Tensor,
+                    old_log_probs: Tensor,
+                    advantages: Tensor,
                     training_iterations: int) -> NoReturn:
         for _ in range(training_iterations):
             critics, new_log_probs = self.get_critics_and_log_probs(states=states, actions=actions)
@@ -134,11 +133,14 @@ class Agent:
             self.train_critic(critics=critics,
                               future_rewards=rewards_to_go)
 
-    def train_actor(self,
-                    advantages: torch.Tensor,
-                    new_log_probs: torch.Tensor,
-                    old_log_probs: torch.Tensor) -> NoReturn:
+    def train_actor(self, advantages: Tensor, new_log_probs: Tensor, old_log_probs: Tensor) -> NoReturn:
+        """
 
+        :param advantages:
+        :param new_log_probs:
+        :param old_log_probs:
+        :return:
+        """
         policy_ratio = torch.exp(new_log_probs - old_log_probs)
         clipped_policy_ratio = policy_ratio.clamp(1 - self._clip, 1 + self._clip)
 
@@ -146,82 +148,36 @@ class Agent:
         clipped_loss = clipped_policy_ratio * advantages
 
         loss = -torch.min(full_loss, clipped_loss).mean()
+        Agent.optimize(optimizer=self._actor_optimizer, loss=loss)
 
-        self._actor_optimizer.zero_grad()
-        loss.backward(retain_graph=True)
-        self._actor_optimizer.step()
+    def train_critic(self, critics: Tensor, future_rewards: Tensor) -> NoReturn:
+        """
 
-    def train_critic(self,
-                     critics: torch.Tensor,
-                     future_rewards: torch.Tensor) -> NoReturn:
+        :param critics:
+        :param future_rewards:
+        :return:
+        """
         loss = (future_rewards - critics).pow(2).mean()
-
-        self._critic_optimizer.zero_grad()
-        loss.backward(retain_graph=True)
-        self._critic_optimizer.step()
+        Agent.optimize(optimizer=self._critic_optimizer, loss=loss)
 
     @staticmethod
-    def optimize(optimizer: torch.optim, loss: torch.Tensor, retain_graph: bool = True):
+    def optimize(optimizer: torch.optim, loss: Tensor, retain_graph: bool = True) -> NoReturn:
+        """
+        function to optimize a model
+        :param optimizer: optimizer for a model
+        :param loss: loss for optimization
+        :param retain_graph: boolean flag for retaining the graph
+        :return: NoReturn
+        """
         optimizer.zero_grad()
         loss.backward(retain_graph=retain_graph)
         optimizer.step()
-
-    def calculate_discounts(self,
-                            rewards: List[torch.Tensor],
-                            gamma: float = None) -> [torch.Tensor]:
-        gamma = gamma if gamma is not None else self._gamma
-
-        rewards.reverse()
-        discount = torch.tensor([0.0 for _ in range(len(rewards[0]))]).to(device=self._device)
-        discounts = []
-        for reward in rewards:
-            discount = reward + discount * gamma
-            discounts.append(discount)
-
-        discounts.reverse()
-
-        return discounts
-
-    def calculate_advantages(self,
-                             rewards: torch.Tensor,
-                             critics: torch.Tensor,
-                             gamma: float = None,
-                             decay: float = None) -> torch.Tensor:
-        gamma = gamma if gamma is not None else self._gamma
-
-        rewards = rewards.cpu().numpy()
-        rewards = [item for item in rewards]
-        critics = critics.cpu().numpy()
-        critics = [item for sublist in critics for item in sublist]
-
-        next_values = numpy.concatenate([critics[1:], [0]])
-        deltas = [rew + gamma * next_val - val for rew, val, next_val in zip(rewards, critics, next_values)]
-
-        advantages = [deltas[-1]]
-        for i in reversed(range(len(deltas) - 1)):
-            advantages.append(deltas[i] + decay * gamma * advantages[-1])
-
-        advantages.reverse()
-        advantages = torch.tensor(advantages, dtype=torch.float).to(device=self._device)
-        return advantages
-
-    def calculate_future_rewards(self, rewards, gamma: float = None):
-        gamma = gamma if gamma is not None else self._gamma
-        future_rewards = []
-
-        discounted_reward = 0
-
-        for reward in reversed(rewards):
-            discounted_reward = reward + discounted_reward * gamma
-            future_rewards.insert(0, discounted_reward)
-
-        return future_rewards
 
     def save(self, filename: str = None) -> NoReturn:
         """
         function to save a checkpoint of the agent
         :param filename: name of the checkpoint file
-        :return:
+        :return: NoReturn
         """
         filename = filename if filename is not None else "checkpoint.pth"
         checkpoint = {"actor": self._actor.to_checkpoint(),

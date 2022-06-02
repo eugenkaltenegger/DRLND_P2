@@ -17,6 +17,7 @@ from src.agent import Agent
 from src.environment import Environment
 from src.hyperparameters.hyperparameters import Hyperparameters
 from src.hyperparameters.hyperparameters_range import HyperparametersRange
+from src.utils import Utils
 
 
 class ContinuousControl:
@@ -198,7 +199,10 @@ class ContinuousControl:
         # TODO
         pass
 
-    def collect_trajectory(self, state: Tensor, steps: int) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def collect_trajectory(self, state: Tensor, steps: int, gamma: float = None)\
+            -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        gamma = gamma if gamma is not None else self._hp["gamma"]
+
         states = []
         actions = []
         log_probs = []
@@ -216,7 +220,7 @@ class ContinuousControl:
 
             state = follow_up_state.to(device=self._device)
 
-        future_rewards = self._agent.calculate_future_rewards(rewards)
+        future_rewards = Utils.calculate_future_rewards(rewards=rewards, gamma=gamma)
 
         states = torch.tensor(numpy.array(states), dtype=torch.float).to(device=self._device)
         actions = torch.tensor(numpy.array(actions), dtype=torch.float).to(device=self._device)
