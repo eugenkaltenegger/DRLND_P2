@@ -16,11 +16,12 @@ class Hyperparameters:
         """
         hp = OrderedDict()
 
+        # maximum episodes
         hp["episodes"] = 250
         # trajectories per episode
-        hp["trajectories"] = 4
+        hp["trajectories"] = 2
         # steps per episode
-        hp["steps"] = 250
+        hp["steps"] = 1000
 
         hp["gamma"] = 0.90
         hp["clip"] = 0.200

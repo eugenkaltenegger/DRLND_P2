@@ -1,25 +1,30 @@
 #!/usr/bin/env python3
 
 import torch
+import typing
 
 from collections import OrderedDict
 from itertools import cycle
 from torch import Tensor
+from torch.nn import Module
 from typing import Dict
 from typing import List
 
+# required for typehint Self
+Self = typing.TypeVar("Self", bound="Network")
 
-class Model(torch.nn.Module):
+
+class Network(torch.nn.Module):
     """
     class to hold a model for an agent
     """
 
     def __init__(self):
         """
-        constructor for model class
+        initializer for model class
             this constructor requires the setup function afterwards
         """
-        super(Model, self).__init__()
+        super(Network, self).__init__()
 
         self._state_size = None
         self._action_size = None
@@ -28,7 +33,7 @@ class Model(torch.nn.Module):
         self._output_function = None
         self._model_sequential = None
 
-    def forward(self, state: Tensor):
+    def forward(self, state: Tensor) -> Tensor:
         """
         function to process a state
         :param state: state to process
@@ -39,21 +44,11 @@ class Model(torch.nn.Module):
         if self._output_function is not None:
             return self._output_function(self._model_sequential(state))
 
-    def training_mode(self):
-        """
-        function to set model to training mode
-        :return: nothing
-        """
-        self.train(True)
-
-    def evaluation_mode(self):
-        """
-        function to set model to evaluation mode
-        :return: nothing
-        """
-        self.train(False)
-
     def to_checkpoint_dict(self) -> Dict:
+        """
+        function to export a network to the network parameters (as dict)
+        :return: the network parameters (as dict)
+        """
         return {"input_size": self._state_size,
                 "output_size": self._action_size,
                 "hidden_layers": self._layers,
@@ -61,7 +56,12 @@ class Model(torch.nn.Module):
                 "output_function": self._output_function,
                 "state_dict": self.state_dict()}
 
-    def from_checkpoint_dict(self, checkpoint: Dict):
+    def from_checkpoint_dict(self, checkpoint: Dict) -> Self:
+        """
+        function to import a network from network parameters (as dict)
+        :param checkpoint: the network parameters (as dict)
+        :return: the network
+        """
         self.setup(state_size=checkpoint["input_size"],
                    action_size=checkpoint["output_size"],
                    layers=checkpoint["hidden_layers"],
@@ -74,8 +74,8 @@ class Model(torch.nn.Module):
               state_size: int,
               action_size: int,
               layers: List[int],
-              activation_function: torch.nn.Module,
-              output_function: torch.nn.Module):
+              activation_function: Module,
+              output_function: Module) -> Self:
         """
         function to create a network with fully connected layers and a defined activation functions after each layer
         :param state_size: size of the state vector / input vector

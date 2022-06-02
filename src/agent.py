@@ -2,33 +2,34 @@
 
 import logging
 import torch
-
-from typing import Tuple
-from typing import NoReturn
+import typing
 
 from torch import Tensor
+from typing import NoReturn
+from typing import Tuple
 
-from src.model import Model
+from src.network import Network
+
+# required for typehint Self
+Self = typing.TypeVar("Self", bound="Agent")
 
 
 class Agent:
     """
-    class representing an PPO agent (with actor and critic)
+    class to represent a PPO agent (with actor and critic)
     """
 
-    def __init__(self, device: torch.device, gamma: float, clip: float):
+    def __init__(self, device: torch.device, clip: float = None) -> None:
         """
-        constructor for agent class
+        initializer for agent class
             this constructor requires the setup_actor and setup_critic function afterwards
         :param device:
-        :param gamma:
         :param clip:
         """
         super(Agent, self).__init__()
 
         self._device = device
 
-        self._gamma = gamma
         self._clip = clip
 
         self._actor = None
@@ -60,13 +61,13 @@ class Agent:
         :param optimizer: optimizer for the model
         :param optimizer_learning_rate: learning rate of the optimizer
         :param covariance: covariance of sample distribution
-        :return:
+        :return: NoReturn
         """
-        self._actor = Model().setup(state_size=state_size,
-                                    action_size=action_size,
-                                    layers=layers,
-                                    activation_function=activation_function,
-                                    output_function=output_function)
+        self._actor = Network().setup(state_size=state_size,
+                                      action_size=action_size,
+                                      layers=layers,
+                                      activation_function=activation_function,
+                                      output_function=output_function)
         self._actor = self._actor.to(device=self._device)
         self._actor_optimizer = optimizer(params=self._actor.parameters(), lr=optimizer_learning_rate)
 
@@ -90,27 +91,35 @@ class Agent:
         :param output_function: function to process output after last layer
         :param optimizer: optimizer for the model
         :param optimizer_learning_rate: learning rate of the optimizer
-        :return:
+        :return: NoReturn
         """
-        self._critic = Model().setup(state_size=state_size,
-                                     action_size=action_size,
-                                     layers=layers,
-                                     activation_function=activation_function,
-                                     output_function=output_function)
+        self._critic = Network().setup(state_size=state_size,
+                                       action_size=action_size,
+                                       layers=layers,
+                                       activation_function=activation_function,
+                                       output_function=output_function)
         self._critic = self._critic.to(device=self._device)
         self._critic_optimizer = optimizer(params=self._critic.parameters(), lr=optimizer_learning_rate)
 
-    def get_action_and_log_prob(self,
-                                state: Tensor) -> Tuple[Tensor, Tensor]:
+    def get_action_and_log_prob(self, state: Tensor) -> Tuple[Tensor, Tensor]:
+        """
+        function to utilize the actor network
+        :param state: the state of the environment
+        :return: a sample action and the according logarithmic probability
+        """
         mean = self._actor(state)
         distribution = torch.distributions.MultivariateNormal(loc=mean, covariance_matrix=self._covariance_matrix)
         action = distribution.sample()
         log_probability = distribution.log_prob(action)
         return action.detach(), log_probability.detach()
 
-    def get_critics_and_log_probs(self,
-                                  states: Tensor,
-                                  actions: Tensor) -> Tuple[Tensor, Tensor]:
+    def get_critics_and_log_probs(self, states: Tensor, actions: Tensor) -> Tuple[Tensor, Tensor]:
+        """
+        function to utilize the critic network
+        :param states: the states of the environment
+        :param actions: the actions of the agent (according to the states)
+        :return: critics on the actions and the logarithmic probability of the actions
+        """
         critics = self._critic(states)
         means = self._actor(states)
         distributions = torch.distributions.MultivariateNormal(loc=means, covariance_matrix=self._covariance_matrix)
@@ -118,28 +127,13 @@ class Agent:
         critics = critics.squeeze()  # Tensor:(..., 20, 1) -> Tensor:(..., 20)
         return critics, log_probs
 
-    def train_agent(self,
-                    states: Tensor,
-                    actions: Tensor,
-                    rewards_to_go: Tensor,
-                    old_log_probs: Tensor,
-                    advantages: Tensor,
-                    training_iterations: int) -> NoReturn:
-        for _ in range(training_iterations):
-            critics, new_log_probs = self.get_critics_and_log_probs(states=states, actions=actions)
-            self.train_actor(advantages=advantages,
-                             new_log_probs=new_log_probs,
-                             old_log_probs=old_log_probs)
-            self.train_critic(critics=critics,
-                              future_rewards=rewards_to_go)
-
     def train_actor(self, advantages: Tensor, new_log_probs: Tensor, old_log_probs: Tensor) -> NoReturn:
         """
-
-        :param advantages:
-        :param new_log_probs:
-        :param old_log_probs:
-        :return:
+        function to train the actor network
+        :param advantages: advantages
+        :param new_log_probs: new logarithmic probabilities
+        :param old_log_probs: old logarithmic probabilities
+        :return: NoReturn
         """
         policy_ratio = torch.exp(new_log_probs - old_log_probs)
         clipped_policy_ratio = policy_ratio.clamp(1 - self._clip, 1 + self._clip)
@@ -152,10 +146,10 @@ class Agent:
 
     def train_critic(self, critics: Tensor, future_rewards: Tensor) -> NoReturn:
         """
-
-        :param critics:
-        :param future_rewards:
-        :return:
+        function to train the critic network
+        :param critics: critics
+        :param future_rewards: future rewards (already discounted)
+        :return: NoReturn
         """
         loss = (future_rewards - critics).pow(2).mean()
         Agent.optimize(optimizer=self._critic_optimizer, loss=loss)
@@ -180,12 +174,12 @@ class Agent:
         :return: NoReturn
         """
         filename = filename if filename is not None else "checkpoint.pth"
-        checkpoint = {"actor": self._actor.to_checkpoint(),
-                      "critic": self._critic.to_checkpoint()}
+        checkpoint = {"actor": self._actor.to_checkpoint_dict(),
+                      "critic": self._critic.to_checkpoint_dict()}
         torch.save(checkpoint, filename)
-        logging.info("agent saved to checkpoint (file: {})".format(filename))
+        logging.info("\rAGENT SAVED (file: {})".format(filename))
 
-    def load(self, filename: str = None) -> NoReturn:
+    def load(self, filename: str = None) -> Self:
         """
         function to load a checkpoint of the agent
         :param filename: name of the checkpoint file
@@ -193,8 +187,8 @@ class Agent:
         """
         filename = filename if filename is not None else "checkpoint.pth"
         checkpoint = torch.load(filename)
-        self._actor = Model().from_checkpoint(checkpoint=checkpoint["actor"])
-        self._critic = Model().from_checkpoint(checkpoint=checkpoint["critic"])
+        self._actor = Network().from_checkpoint(checkpoint=checkpoint["actor"])
+        self._critic = Network().from_checkpoint(checkpoint=checkpoint["critic"])
         logging.info("agent loaded from checkpoint (file: {})".format(filename))
 
         return self

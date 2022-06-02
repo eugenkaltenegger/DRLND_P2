@@ -16,6 +16,7 @@ class HyperparametersRange:
         """
         hp = OrderedDict()
 
+        # maximum episodes
         hp["episodes"] = [250]
         # trajectories per episode
         hp["trajectories"] = [1, 2, 4]

@@ -2,16 +2,17 @@
 
 import itertools
 import logging
-from typing import List, Tuple
-
 import numpy
 import sys
 import torch
 
-from torch import Tensor
 from collections import OrderedDict
-
 from matplotlib import pyplot
+from typing import NoReturn
+from typing import Optional
+from typing import List
+from typing import Tuple
+from torch import Tensor
 
 from src.agent import Agent
 from src.environment import Environment
@@ -21,70 +22,74 @@ from src.utils import Utils
 
 
 class ContinuousControl:
+    """
+    class for the continuous control task
+    """
 
-    def __init__(self):
+    def __init__(self, environment_name) -> None:
+        """
+        initializer for continuous control class
+        :param environment_name: name of the environment to operate
+        """
         # device variable
         self._device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         # environment variables
-        self._environment = None
+        self._environment_name = environment_name
+        self._environment_graphics = None
+        self._environment_training = None
 
-        # agent variables
-        self._agent = None
-
-        # score variables
-        self._absolute_scores = None
-        self._average_scores = None
+        # environment object
+        self._environment: Optional[Environment] = None
+        # agent object
+        self._agent: Optional[Agent] = None
 
         # hyperparameters for training (see the file ./hyperparameters/hyperparameters.py)
         self._hp: OrderedDict = Hyperparameters().get_dict()
-
         # hyperparameter range for tuning (see the file ./hyperparameters/hyperparameters_range.py)
         self._hpr: OrderedDict = HyperparametersRange().get_dict()
 
-    def setup(self, mode=None, environment_name=None):
-        # setting default mode
-        mode = mode if mode is not None else "show"
-
-        # setting default environment
-        environment_name = environment_name if environment_name is not None else "Twenty"
-
-        if mode == "train":
-            self.train(environment_name=environment_name)
-            # self.plot()
-
-        if mode == "tune":
-            pass
-            # self.tune(environment_name=environment_name)
-            # self.plot()
-
-        if mode == "show":
-            pass
-            # self.show(environment_name=environment_name)
-
-    def reset_environment(self, environment_name, enable_graphics, train_environment):
+    def enable_training(self) -> NoReturn:
         """
-        function to reset the environment and get an info about the environment state
-            if there is no environment a suitable environment is built
-        :param environment_name: ame of the environment to use, either "One" (one arm) or "Twenty" (twenty arms)
-        :param enable_graphics: parameter to set whether the environment is visualized or not visualized
-        :param train_environment: parameter to set whether the environment is for training or for evaluation
-        :return: info about the environment state
+        function to enable training mode
+            training mode has to be either enabled or disabled
+        :return: NoReturn
+        """
+        self._environment_graphics = False
+        self._environment_training = True
+
+    def disable_training(self) -> NoReturn:
+        """
+        function to disable training mode
+            training mode has to be either enabled or disabled
+        :return: NoReturn
+        """
+        self._environment_graphics = True
+        self._environment_training = False
+
+    def reset_environment(self) -> NoReturn:
+        """
+        function to reset the environment
+        :return: NoReturn
         """
         if self._environment is None:
-            self._environment = Environment(environment_name=environment_name, enable_graphics=enable_graphics)
+            self._environment = Environment(environment_name=self._environment_name,
+                                            enable_graphics=self._environment_graphics)
 
-        return self._environment.reset(train_environment=train_environment)
+        self._environment.reset(train_environment=self._environment_training)
 
-    def reset_agent(self):
-        actor_state_size: int = self._environment.get_state_size()
-        actor_action_size: int = self._environment.get_action_size()
+    def reset_agent(self) -> NoReturn:
+        """
+        function to reset the agent
+        :return: NoReturn
+        """
+        actor_state_size: int = self._environment.state_size()
+        actor_action_size: int = self._environment.action_size()
 
-        critic_state_size: int = self._environment.get_state_size()
+        critic_state_size: int = self._environment.state_size()
         critic_action_size: int = 1
 
         self._agent = Agent(device=self._device,
-                            gamma=self._hp["gamma"],
                             clip=self._hp["clip"])
         self._agent.setup_actor(state_size=actor_state_size,
                                 action_size=actor_action_size,
@@ -102,64 +107,94 @@ class ContinuousControl:
                                  optimizer=self._hp["critic_optimizer"],
                                  optimizer_learning_rate=self._hp["critic_optimizer_learning_rate"])
 
-    def train(self,
-              environment_name,
-              episodes: int = None,
-              trajectories: int = None,
-              steps: int = None,
-              training_iterations: int = None) -> List[int]:
-        episodes = episodes if episodes is not None else self._hp["episodes"]
-        trajectories = trajectories if trajectories is not None else self._hp["trajectories"]
-        steps = steps if steps is not None else self._hp["steps"]
-        training_iterations = training_iterations if training_iterations is not None else self._hp[
-            "training_iterations"]
+    def run(self, mode: str) -> NoReturn:
+        """
+        function to call the function(s) for the passed arguments
+        :param mode: operation mode
+        :return: NoReturn
+        """
+        if mode not in ["train", "tune", "show"]:
+            logging.error("INVALID OPERATION MODE")
 
+        if mode == "train":
+            logging.info("\rSTARTED IN TRAIN MODE")
+            result = self.train(filename="continuous_control.pth")
+            self.plot(result)
+
+        if mode == "tune":
+            logging.info("\rSTARTED IN TUNE MODE")
+            result = self.tune()
+            self.plot(result)
+
+        if mode == "show":
+            logging.info("\rSTARTED IN SHOW MODE")
+            self.show()
+
+    def train(self, filename: str = None) -> List[int]:
+        """
+        function to train the agent
+        :param filename: filename for the save file of the agent, if not provided not safe file is creat
+        :return: scores per episode (score is the mean reward over all agents over  the sum of all steps)
+        """
+        # enable training mode
+        self.enable_training()
         # setup environment
-        enable_graphics = False
-        train_environment = True
-        self.reset_environment(environment_name=environment_name,
-                               enable_graphics=enable_graphics,
-                               train_environment=train_environment)
-
+        self.reset_environment()
         self.reset_agent()
+        # setup parameters
+        episodes = int(self._hp["episodes"])                        # number of episodes
+        trajectories = int(self._hp["trajectories"])                # number of trajectories
+        steps = int(self._hp["steps"] / self._hp["trajectories"])   # number of steps per trajectories
+        training_iterations = int(self._hp["training_iterations"])  # number of training iterations per step
 
-        episode_scores = []
+        scores = []         # score of each episode
         for episode in range(1, episodes + 1):
-            episode_rewards = []
-            state = self._environment.reset().to(device=self._device)
+            collected_rewards = []
+            state = self._environment.state().to(device=self._device)
             for trajectory in range(trajectories):
-                states, actions, log_probs, rewards, rewards_to_go = self.collect_trajectory(state=state,
-                                                                                             steps=steps)
-                critics, _ = self._agent.get_critics_and_log_probs(states=states,
-                                                                   actions=actions)
-                advantages = rewards_to_go - critics.detach()
-                normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
+                # collect trajectories and process data
+                states, actions, log_probs, rewards, future_rewards = self.collect_trajectory(state=state, steps=steps)
+                critics, _ = self._agent.get_critics_and_log_probs(states=states, actions=actions)
+                advantages = future_rewards - critics.detach()
+                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
 
-                self._agent.train_agent(states=states,
-                                        actions=actions,
-                                        rewards_to_go=rewards_to_go,
-                                        old_log_probs=log_probs,
-                                        advantages=normalized_advantages,
-                                        training_iterations=training_iterations)
+                # training
+                for _ in range(training_iterations):
+                    critics, new_log_probs = self._agent.get_critics_and_log_probs(states=states, actions=actions)
+                    self._agent.train_actor(advantages=advantages, new_log_probs=new_log_probs, old_log_probs=log_probs)
+                    self._agent.train_critic(critics=critics, future_rewards=future_rewards)
 
-                rewards = rewards.cpu().numpy()
-                for reward in rewards:
-                    episode_rewards.append(reward.tolist())
+                collected_rewards = collected_rewards + [reward.tolist() for reward in rewards.cpu().numpy()]
 
-            episode_score = self.calculate_score(episode_rewards)
-            episode_scores.append(episode_score)
+            scores.append(self.calculate_score(collected_rewards))
+            # logging
+            solve = ""
+            mean = 0
+            if episode < 100:
+                solve = "NO MEAN SCORE (OVER 100 EPISODES) YET"
+            if episode >= 100:
+                mean = numpy.array(scores[-100]).mean()
+                solve = "MEAN SCORE (OVER 100 EPISODES): {:3.5f}".format(mean)
+            logging.info("\rEPISODE: {:4d} - SCORE: {:3.5f} - {}".format(episode, scores[-1], solve))
 
-            if len(episode_scores) < 100:
-                print("episode: {:4d} - score: {:3.5f} - below 100 iterations".format(episode, self.calculate_score(
-                    episode_rewards)))
+            # return if environment is solved
+            if mean > 30:
+                break
 
-            if len(episode_scores) >= 100:
-                mean_over_100 = numpy.array(episode_scores[-100]).mean()
-                print("episode: {:4d} score: {:3.5f} - mean over 100: {}".format(episode, self.calculate_score(
-                    episode_rewards), mean_over_100))
-        return episode_scores
+        if filename:
+            self._agent.save(filename=filename)
 
-    def tune(self, environment_name):
+        self._environment.close()
+
+        return scores
+
+    def tune(self) -> NoReturn:
+        """
+        function for hyperparameter tuning
+            by executing the train function with different hyperparameter combination the set of hyperparameters solving
+            the environment in the least episodes is found and the best scores are returned
+        :return: scores of the run with the best set of hyperparameters
+        """
         for hp_key, hpr_key in zip(self._hp.keys(), self._hpr.keys()):
             if not hp_key == hpr_key:
                 logging.error("\rINVALID HYPERPARAMETERS FOR TUNING\n")
@@ -168,39 +203,60 @@ class ContinuousControl:
         hp_iterators = [iter(hpr) for hpr in self._hpr.values()]
         hp_combinations = itertools.product(*hp_iterators)
 
-        best_run_episode_count = None
-        best_run_score = None
+        best_run_scores = None
+        best_run_episodes = None
         best_run_hp = None
 
         for hp_combination in hp_combinations:
             self._hp = OrderedDict(zip(self._hpr.keys(), hp_combination))
-            current_run_scores, current_run_average_scores = self.train(environment_name)
+            current_run_scores = self.train()
+            current_run_episodes = len(current_run_scores)
 
-            current_run_episode_count = len(current_run_scores)
-            current_run_score = numpy.average(current_run_scores[-100:])
-            if best_run_episode_count is None or current_run_episode_count < best_run_episode_count:
-                best_run_episode_count = current_run_episode_count
-                best_run_score = current_run_score
+            if best_run_episodes is None or current_run_episodes < best_run_episodes:
+                best_run_scores = current_run_scores
+                best_run_episodes = current_run_episodes
                 best_run_hp = self._hp.copy()
 
+        best_run_episodes = len(best_run_episodes)
+        best_run_mean_score = numpy.average(best_run_episodes[-100:])
+
         logging.info("TUNING FINISHED")
-        logging.info("EPISODES: {}".format(best_run_episode_count))
-        logging.info("SCORE: {}".format(best_run_score))
+        logging.info("BEST RUN EPISODES: {}".format(best_run_episodes))
+        logging.info("BEST RUN MEAN SCORE (OVER 100 EPISODES): {}".format(best_run_mean_score))
 
         ContinuousControl.print_hyperparameters(best_run_hp)
 
-    def show(self, environment_name):
-        # setup environment
-        enable_graphics = True
-        train_environment = False
-        self.reset_environment(environment_name=environment_name,
-                               enable_graphics=enable_graphics,
-                               train_environment=train_environment)
-        # TODO
-        pass
+        return best_run_scores
 
-    def collect_trajectory(self, state: Tensor, steps: int, gamma: float = None)\
-            -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    def show(self) -> NoReturn:
+        """
+        function to showcase the saved agent
+        :return: NoReturn
+        """
+        # disable training mode
+        self.enable_training()
+        # setup environment
+        self.reset_environment()
+        self.reset_agent()
+
+        self._agent = Agent(device=self._device).load("continuous_control.pth")
+        state = self._environment.state()
+        for step in range(10000):
+            action, _ = self._agent.get_action_and_log_prob(state=state)
+            state, _, done = self._environment.step(action)
+            if any(done):
+                break
+
+        self._environment.close()
+
+    def collect_trajectory(self, state: Tensor, steps: int, gamma: float = None) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """
+        function to collect a trajectory
+        :param state: state of the environment for the trajectory start
+        :param steps: number of steps in the trajectory
+        :param gamma: discount factor for the future rewards
+        :return: a tuple of states, actions, log_probs, rewards, future_rewards
+        """
         gamma = gamma if gamma is not None else self._hp["gamma"]
 
         states = []
@@ -230,7 +286,12 @@ class ContinuousControl:
         return states, actions, log_probs, rewards, future_rewards
 
     @staticmethod
-    def calculate_score(rewards):
+    def calculate_score(rewards: List[List[float]]) -> float:
+        """
+        function to calculate the score (score is the mean reward over all agents over the sum of all steps)
+        :param rewards: list of rewards per agent per step
+        :return: score (score is the mean reward over all agents over the sum of all steps)
+        """
         total_agent_reward = [0 for _ in range(len(rewards[0]))]
 
         for reward in rewards:
@@ -240,23 +301,36 @@ class ContinuousControl:
         return numpy.array(total_agent_reward).mean()
 
     @staticmethod
-    def plot(scores: List[float], filename: str):
+    def plot(scores: List[float], show: bool = False, filename: str = None) -> NoReturn:
+        """
+        function to create a plot of the given scores
+        :param scores: scores to plot
+        :param show: if true the plot will be shown
+        :param filename: if not None the plot will be stored to the given destination
+        :return: NoReturn
+        """
         fig = pyplot.figure()
         pyplot.plot(numpy.arange(len(scores)), scores)
         pyplot.ylabel('Score')
         pyplot.xlabel('Episode')
-        if filename is None:
-            pyplot.show()
         if filename is not None:
             pyplot.savefig(filename)
 
     @staticmethod
-    def print_hyperparameters(hyperparameters):
+    def print_hyperparameters(hyperparameters: OrderedDict) -> NoReturn:
+        """
+        function to print the given hyperparameters
+        :param hyperparameters: hyperparameters to print
+        :return: NoReturn
+        """
         for key, value in hyperparameters.items():
             logging.info("{}: {}".format(key, value))
 
 
 if __name__ == "__main__":
+    # ARG 1: OPERATION MODE
+    # ARG 2: ENVIRONMENT NAME
+    # ARG 3: SAVE AGENT FILENAME
     mode_arg = sys.argv[1]
     environment_name_arg = sys.argv[2]
-    ContinuousControl().setup(mode=mode_arg, environment_name=environment_name_arg)
+    ContinuousControl(environment_name=environment_name_arg).run(mode=mode_arg)
