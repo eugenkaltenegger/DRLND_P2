@@ -1,4 +1,4 @@
-name: kaltenegger_p1_navigation
+name: kaltenegger_p2_continuous-control
 channels:
   - defaults
   - pytorch
