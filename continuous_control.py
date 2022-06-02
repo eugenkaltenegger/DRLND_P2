@@ -246,7 +246,7 @@ class ContinuousControl:
             log_probs.append(log_prob.cpu().numpy())
             rewards.append(reward.cpu().numpy())
 
-            state = follow_up_state
+            state = follow_up_state.to(device=self._device)
         # TODO: calculate rewards to go (and rename them)
         rewards_to_go = self._agent.calculate_rewards_to_go(rewards)
 
