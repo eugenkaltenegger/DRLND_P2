@@ -2,7 +2,8 @@
 
 import logging
 import os
-from typing import NoReturn, Dict, List, Tuple
+from typing import NoReturn, Tuple
+from torch import Tensor as Tensor
 
 import torch
 import unityagents
@@ -44,7 +45,7 @@ class Environment:
 
         self._agents = environment_info.agents
 
-    def reset(self, brain: unityagents.brain.BrainParameters = None, train_environment: bool = True):
+    def reset(self, brain: unityagents.brain.BrainParameters = None, train_environment: bool = True) -> Tensor:
         """
         function to reset environment and return environment info
         :param brain: brain for which the environment is reset
@@ -78,7 +79,7 @@ class Environment:
         :return: size of the state vector for the given brain
         """
         brain = brain if brain is not None else self._default_brain
-        return brain.vector_observation_space_size
+        return int(brain.vector_observation_space_size)
 
     def get_action_size(self, brain: unityagents.brain.BrainParameters = None) -> int:
         """
@@ -87,18 +88,15 @@ class Environment:
         :return: size of the action vector for the given brain
         """
         brain = brain if brain is not None else self._default_brain
-        return brain.vector_action_space_size
+        return int(brain.vector_action_space_size)
 
-    def get_action_range(self) -> [Dict[str, float]]:
+    def step(self, action: Tensor, brain: unityagents.brain.BrainParameters = None) -> Tuple[Tensor, Tensor, Tensor]:
         """
-        function to get the range (as dict containing "min" and "max") for each value of the state vector
-        :return: a list of dicts containing "min" and "max"  for each value of the action vector
+        function to make a step in the environment
+        :param action: action for the agent
+        :param brain: brain for which will execute the actions
+        :return: state, reward, done following the execution of the action
         """
-        return [{"min": float(-1), "max": float(1)} for _ in range(self.get_action_size())]
-
-    def step(self,
-             action: torch.Tensor,
-             brain: unityagents.brain.BrainParameters = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         brain = brain if brain is not None else self._default_brain
 
         action = action.tolist()
@@ -109,32 +107,3 @@ class Environment:
         reward = torch.tensor(info.rewards, dtype=torch.float)
         done = torch.tensor(info.local_done, dtype=torch.float)
         return state, reward, done
-
-    def clipped_step(self,
-                     actions: torch.Tensor,
-                     brain: unityagents.brain.BrainParameters = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        clip_actions = self.clip_actions(actions=actions)
-        return self.step(actions=clip_actions, brain=brain)
-
-    def clip_actions(self, actions: torch.Tensor) -> torch.Tensor:
-        clipped_actions = []
-        for action in actions:
-
-            clipped_action = []
-
-            for action_value, action_range in zip(action, self.get_action_range()):
-
-                if action_range["min"] <= action_value <= action_range["max"]:
-                    clipped_action.append(action_value)
-
-                if action_value < action_range["min"]:
-                    clipped_action.append(action_range["min"])
-
-                if action_value > action_range["max"]:
-                    clipped_action.append(action_range["max"])
-
-            clipped_actions.append(clipped_action)
-
-        clipped_actions = torch.tensor(clipped_actions, dtype=torch.float)
-
-        return clipped_actions

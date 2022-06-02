@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
+import torch
+
 from collections import OrderedDict
 from itertools import cycle
+from torch import Tensor
 from typing import Dict
 from typing import List
-
-import torch
 
 
 class Model(torch.nn.Module):
@@ -27,18 +28,16 @@ class Model(torch.nn.Module):
         self._output_function = None
         self._model_sequential = None
 
-    def forward(self, state: torch.Tensor):
+    def forward(self, state: Tensor):
         """
         function to process a state
         :param state: state to process
-        :return: action to take
+        :return: model output
         """
-        activation = self._model_sequential(state)
         if self._output_function is None:
-            output = activation
+            return self._model_sequential(state)
         if self._output_function is not None:
-            output = self._output_function(activation)
-        return output
+            return self._output_function(self._model_sequential(state))
 
     def training_mode(self):
         """

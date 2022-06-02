@@ -145,10 +145,10 @@ class Agent:
         full_loss = policy_ratio * advantages
         clipped_loss = clipped_policy_ratio * advantages
 
-        policy_loss = -torch.min(full_loss, clipped_loss).mean()
+        loss = -torch.min(full_loss, clipped_loss).mean()
 
         self._actor_optimizer.zero_grad()
-        policy_loss.backward(retain_graph=True)
+        loss.backward(retain_graph=True)
         self._actor_optimizer.step()
 
     def train_critic(self,
@@ -159,6 +159,12 @@ class Agent:
         self._critic_optimizer.zero_grad()
         loss.backward(retain_graph=True)
         self._critic_optimizer.step()
+
+    @staticmethod
+    def optimize(optimizer: torch.optim, loss: torch.Tensor, retain_graph: bool = True):
+        optimizer.zero_grad()
+        loss.backward(retain_graph=retain_graph)
+        optimizer.step()
 
     def calculate_discounts(self,
                             rewards: List[torch.Tensor],
