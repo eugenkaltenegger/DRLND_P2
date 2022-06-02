@@ -2,11 +2,16 @@
 
 import itertools
 import logging
+from typing import List, Tuple
+
 import numpy
 import sys
 import torch
 
-from collections import OrderedDict, deque
+from torch import Tensor
+from collections import OrderedDict
+
+from matplotlib import pyplot
 
 from src.agent import Agent
 from src.environment import Environment
@@ -79,15 +84,12 @@ class ContinuousControl:
 
         self._agent = Agent(device=self._device,
                             gamma=self._hp["gamma"],
-                            decay=self._hp["decay"],
-                            clip=self._hp["clip"],
-                            kl_difference_limit=self._hp["kl_difference_limit"])
+                            clip=self._hp["clip"])
         self._agent.setup_actor(state_size=actor_state_size,
                                 action_size=actor_action_size,
                                 layers=self._hp["actor_layers"],
                                 activation_function=self._hp["actor_activation_function"],
                                 output_function=self._hp["actor_output_function"],
-                                training_iterations=self._hp["actor_training_iterations"],
                                 optimizer=self._hp["actor_optimizer"],
                                 optimizer_learning_rate=self._hp["actor_optimizer_learning_rate"],
                                 covariance=self._hp["actor_covariance"])
@@ -96,17 +98,20 @@ class ContinuousControl:
                                  layers=self._hp["critic_layers"],
                                  activation_function=self._hp["critic_activation_function"],
                                  output_function=self._hp["critic_output_function"],
-                                 training_iterations=self._hp["critic_training_iterations"],
                                  optimizer=self._hp["critic_optimizer"],
                                  optimizer_learning_rate=self._hp["critic_optimizer_learning_rate"])
 
-    def train(self, environment_name, episodes: int = None, rollouts: int = None, steps: int = None):
+    def train(self,
+              environment_name,
+              episodes: int = None,
+              trajectories: int = None,
+              steps: int = None,
+              training_iterations: int = None) -> List[int]:
         episodes = episodes if episodes is not None else self._hp["episodes"]
-        rollouts = rollouts if rollouts is not None else self._hp["rollouts"]
+        trajectories = trajectories if trajectories is not None else self._hp["trajectories"]
         steps = steps if steps is not None else self._hp["steps"]
-
-        trajectories_per_episode = self._hp["trajectories_per_episode"]
-        steps = self._hp["steps_per_trajectory"]
+        training_iterations = training_iterations if training_iterations is not None else self._hp[
+            "training_iterations"]
 
         # setup environment
         enable_graphics = False
@@ -117,24 +122,24 @@ class ContinuousControl:
 
         self.reset_agent()
 
-        # TODO: track rewards of single agents over each episode
         episode_scores = []
-        for episode in range(episodes):
+        for episode in range(1, episodes + 1):
             episode_rewards = []
             state = self._environment.reset().to(device=self._device)
-            for trajectory in range(trajectories_per_episode):
+            for trajectory in range(trajectories):
                 states, actions, log_probs, rewards, rewards_to_go = self.collect_trajectory(state=state,
                                                                                              steps=steps)
                 critics, _ = self._agent.get_critics_and_log_probs(states=states,
                                                                    actions=actions)
                 advantages = rewards_to_go - critics.detach()
-                normalized_advantages = ( advantages - advantages.mean() ) / ( advantages.std() + 1e-10 )
+                normalized_advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
 
                 self._agent.train_agent(states=states,
                                         actions=actions,
                                         rewards_to_go=rewards_to_go,
                                         old_log_probs=log_probs,
-                                        advantages=normalized_advantages)
+                                        advantages=normalized_advantages,
+                                        training_iterations=training_iterations)
 
                 rewards = rewards.cpu().numpy()
                 for reward in rewards:
@@ -144,22 +149,14 @@ class ContinuousControl:
             episode_scores.append(episode_score)
 
             if len(episode_scores) < 100:
-                print("episode: {:4d} - score: {:3.5f} - below 100 iterations".format(episode, self.calculate_score(episode_rewards)))
+                print("episode: {:4d} - score: {:3.5f} - below 100 iterations".format(episode, self.calculate_score(
+                    episode_rewards)))
 
             if len(episode_scores) >= 100:
-                temp = reversed(episode_scores)
-                mean_over_100 = numpy.array(temp[0:99]).mean()
+                mean_over_100 = numpy.array(episode_scores[-100]).mean()
                 print("episode: {:4d} score: {:3.5f} - mean over 100: {}".format(episode, self.calculate_score(
-                    episode_rewards, mean_over_100)))
-
-    def calculate_score(self, rewards):
-        total_agent_reward = [0 for _ in range(self._environment.number_of_agents())]
-
-        for reward in rewards:
-            for index, agent_reward in enumerate(reward):
-                total_agent_reward[index] += float(agent_reward)
-
-        return numpy.array(total_agent_reward).mean()
+                    episode_rewards), mean_over_100))
+        return episode_scores
 
     def tune(self, environment_name):
         for hp_key, hpr_key in zip(self._hp.keys(), self._hpr.keys()):
@@ -201,41 +198,12 @@ class ContinuousControl:
         # TODO
         pass
 
-    def plot(self):
-        # TODO
-        pass
-
-    def rollout(self, state: torch.Tensor, steps: int):
-        states = []
-        actions = []
-        rewards = []
-        log_probs = []
-
-        for _ in range(steps):
-            action, actual_log_prob = self._agent.get_action_and_log_prob(state)
-
-            next_state, reward, done = self._environment.step(action)
-            next_state = next_state.to(self._device)
-            reward = reward.to(self._device)
-            done = done.to(self._device)
-
-            states.append(state)
-            actions.append(action)
-            rewards.append(reward)
-            log_probs.append(actual_log_prob)
-
-            state = next_state
-
-            if any(done):
-                break
-
-        return states, actions, rewards, log_probs
-
-    def collect_trajectory(self, state: torch.Tensor, steps: int):
+    def collect_trajectory(self, state: Tensor, steps: int) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         states = []
         actions = []
         log_probs = []
         rewards = []
+        future_rewards = None
 
         for step in range(steps):
             action, log_prob = self._agent.get_action_and_log_prob(state=state)
@@ -247,15 +215,36 @@ class ContinuousControl:
             rewards.append(reward.cpu().numpy())
 
             state = follow_up_state.to(device=self._device)
-        # TODO: calculate rewards to go (and rename them)
-        rewards_to_go = self._agent.calculate_rewards_to_go(rewards)
+
+        future_rewards = self._agent.calculate_future_rewards(rewards)
 
         states = torch.tensor(numpy.array(states), dtype=torch.float).to(device=self._device)
         actions = torch.tensor(numpy.array(actions), dtype=torch.float).to(device=self._device)
         log_probs = torch.tensor(numpy.array(log_probs), dtype=torch.float).to(device=self._device)
         rewards = torch.tensor(numpy.array(rewards), dtype=torch.float).to(device=self._device)
-        rewards_to_go = torch.tensor(numpy.array(rewards_to_go), dtype=torch.float).to(device=self._device)
-        return states, actions, log_probs, rewards, rewards_to_go
+        future_rewards = torch.tensor(numpy.array(future_rewards), dtype=torch.float).to(device=self._device)
+        return states, actions, log_probs, rewards, future_rewards
+
+    @staticmethod
+    def calculate_score(rewards):
+        total_agent_reward = [0 for _ in range(len(rewards[0]))]
+
+        for reward in rewards:
+            for index, agent_reward in enumerate(reward):
+                total_agent_reward[index] += float(agent_reward)
+
+        return numpy.array(total_agent_reward).mean()
+
+    @staticmethod
+    def plot(scores: List[float], filename: str):
+        fig = pyplot.figure()
+        pyplot.plot(numpy.arange(len(scores)), scores)
+        pyplot.ylabel('Score')
+        pyplot.xlabel('Episode')
+        if filename is None:
+            pyplot.show()
+        if filename is not None:
+            pyplot.savefig(filename)
 
     @staticmethod
     def print_hyperparameters(hyperparameters):
