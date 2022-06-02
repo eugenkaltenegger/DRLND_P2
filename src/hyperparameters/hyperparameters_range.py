@@ -17,9 +17,9 @@ class HyperparametersRange:
         hp = OrderedDict()
 
         # maximum episodes
-        hp["episodes"] = [250]
+        hp["episodes"] = [500]
         # trajectories per episode
-        hp["trajectories"] = [1, 2, 4]
+        hp["trajectories"] = [1, 2, 3, 4, 5]
         # steps per episode
         hp["steps"] = [1000]
 
@@ -27,16 +27,17 @@ class HyperparametersRange:
         hp["clip"] = [0.20]
 
         # iterations the agent is learning one step
-        hp["training_iterations"] = 5
+        hp["training_iterations"] = [5, 10, 15, 20]
 
         hp["actor_layers"] = [[128, 64, 32]]
-        hp["actor_activation_function"] = [torch.nn.ReLU]
+        hp["actor_activation_function"] = [torch.nn.ReLU, torch.nn.Tanh]
         hp["actor_output_function"] = [None]
         hp["actor_optimizer"] = [torch.optim.Adam]
         hp["actor_optimizer_learning_rate"] = [0.005]
+        hp["actor_covariance"] = [1.0]
 
         hp["critic_layers"] = [[128, 64, 32]]
-        hp["critic_activation_function"] = [torch.nn.ReLU]
+        hp["critic_activation_function"] = [torch.nn.ReLU, torch.nn.Tanh]
         hp["critic_output_function"] = [None]
         hp["critic_optimizer"] = [torch.optim.Adam]
         hp["critic_optimizer_learning_rate"] = [0.005]

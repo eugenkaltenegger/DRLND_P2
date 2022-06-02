@@ -177,7 +177,7 @@ class Agent:
         checkpoint = {"actor": self._actor.to_checkpoint_dict(),
                       "critic": self._critic.to_checkpoint_dict()}
         torch.save(checkpoint, filename)
-        logging.info("\rAGENT SAVED (file: {})".format(filename))
+        logging.info("\rAGENT SAVED (FILE: {})".format(filename))
 
     def load(self, filename: str = None) -> Self:
         """
@@ -185,10 +185,10 @@ class Agent:
         :param filename: name of the checkpoint file
         :return: self
         """
-        filename = filename if filename is not None else "checkpoint.pth"
+        filename = filename if filename is not None else "continuous_control.pth"
         checkpoint = torch.load(filename)
-        self._actor = Network().from_checkpoint(checkpoint=checkpoint["actor"])
-        self._critic = Network().from_checkpoint(checkpoint=checkpoint["critic"])
-        logging.info("agent loaded from checkpoint (file: {})".format(filename))
+        self._actor = Network().from_checkpoint_dict(checkpoint=checkpoint["actor"]).to(self._device)
+        self._critic = Network().from_checkpoint_dict(checkpoint=checkpoint["critic"]).to(self._device)
+        logging.info("\rAGENT LOADED (FILE: {})".format(filename))
 
         return self

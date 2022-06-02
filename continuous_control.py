@@ -118,19 +118,19 @@ class ContinuousControl:
 
         if mode == "train":
             logging.info("\rSTARTED IN TRAIN MODE")
-            result = self.train(filename="continuous_control.pth")
-            self.plot(result)
+            scores = self.train(filename="continuous_control.pth")
+            self.plot(scores, True, "training.png")
 
         if mode == "tune":
             logging.info("\rSTARTED IN TUNE MODE")
-            result = self.tune()
-            self.plot(result)
+            scores = self.tune()
+            self.plot(scores, True, "tuning.png")
 
         if mode == "show":
             logging.info("\rSTARTED IN SHOW MODE")
             self.show()
 
-    def train(self, filename: str = None) -> List[int]:
+    def train(self, filename: str = None) -> List[float]:
         """
         function to train the agent
         :param filename: filename for the save file of the agent, if not provided not safe file is creat
@@ -150,6 +150,7 @@ class ContinuousControl:
         scores = []         # score of each episode
         for episode in range(1, episodes + 1):
             collected_rewards = []
+            self._environment.reset()
             state = self._environment.state().to(device=self._device)
             for trajectory in range(trajectories):
                 # collect trajectories and process data
@@ -179,12 +180,11 @@ class ContinuousControl:
 
             # return if environment is solved
             if mean > 30:
+                logging.info("\rENVIRONMENT SOLVED - YEAH!")
                 break
 
         if filename:
             self._agent.save(filename=filename)
-
-        self._environment.close()
 
         return scores
 
@@ -197,7 +197,7 @@ class ContinuousControl:
         """
         for hp_key, hpr_key in zip(self._hp.keys(), self._hpr.keys()):
             if not hp_key == hpr_key:
-                logging.error("\rINVALID HYPERPARAMETERS FOR TUNING\n")
+                logging.error("\rINVALID HYPERPARAMETERS FOR TUNING")
                 exit()
 
         hp_iterators = [iter(hpr) for hpr in self._hpr.values()]
@@ -209,6 +209,11 @@ class ContinuousControl:
 
         for hp_combination in hp_combinations:
             self._hp = OrderedDict(zip(self._hpr.keys(), hp_combination))
+
+            logging.info("----------------------------------------------------------------------")
+            self.print_hyperparameters(self._hp)
+            logging.info("----------------------------------------------------------------------")
+
             current_run_scores = self.train()
             current_run_episodes = len(current_run_scores)
 
@@ -226,6 +231,8 @@ class ContinuousControl:
 
         ContinuousControl.print_hyperparameters(best_run_hp)
 
+        self._environment.close()
+
         return best_run_scores
 
     def show(self) -> NoReturn:
@@ -234,16 +241,18 @@ class ContinuousControl:
         :return: NoReturn
         """
         # disable training mode
-        self.enable_training()
+        self.disable_training()
         # setup environment
         self.reset_environment()
         self.reset_agent()
 
-        self._agent = Agent(device=self._device).load("continuous_control.pth")
+        self._agent = self._agent.load("continuous_control.pth")
         state = self._environment.state()
         for step in range(10000):
+            state = state.to(device=self._device)
             action, _ = self._agent.get_action_and_log_prob(state=state)
-            state, _, done = self._environment.step(action)
+            action = action.to(device=self._device)
+            state, _, done = self._environment.step(action=action)
             if any(done):
                 break
 
@@ -313,6 +322,8 @@ class ContinuousControl:
         pyplot.plot(numpy.arange(len(scores)), scores)
         pyplot.ylabel('Score')
         pyplot.xlabel('Episode')
+        if show:
+            pyplot.show()
         if filename is not None:
             pyplot.savefig(filename)
 

@@ -30,7 +30,9 @@ class Network(torch.nn.Module):
         self._action_size = None
         self._layers = None
         self._activation_function = None
+        self._activation_function_name = None
         self._output_function = None
+        self._output_function_name = None
         self._model_sequential = None
 
     def forward(self, state: Tensor) -> Tensor:
@@ -52,8 +54,8 @@ class Network(torch.nn.Module):
         return {"input_size": self._state_size,
                 "output_size": self._action_size,
                 "hidden_layers": self._layers,
-                "activation_function": self._activation_function,
-                "output_function": self._output_function,
+                "activation_function": self._activation_function_name,
+                "output_function": self._output_function_name,
                 "state_dict": self.state_dict()}
 
     def from_checkpoint_dict(self, checkpoint: Dict) -> Self:
@@ -89,7 +91,9 @@ class Network(torch.nn.Module):
         self._state_size = state_size
         self._action_size = action_size
         self._layers = layers
+        self._activation_function_name = activation_function
         self._activation_function = activation_function()
+        self._output_function_name = output_function if output_function is not None else None
         self._output_function = output_function() if output_function is not None else None
 
         input_size = self._state_size

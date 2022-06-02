@@ -17,7 +17,7 @@ class Hyperparameters:
         hp = OrderedDict()
 
         # maximum episodes
-        hp["episodes"] = 250
+        hp["episodes"] = 1000
         # trajectories per episode
         hp["trajectories"] = 2
         # steps per episode
@@ -27,7 +27,7 @@ class Hyperparameters:
         hp["clip"] = 0.200
 
         # iterations the agent is learning one step
-        hp["training_iterations"] = 5
+        hp["training_iterations"] = 10
 
         hp["actor_layers"] = [128, 64, 32]
         hp["actor_activation_function"] = torch.nn.ReLU
