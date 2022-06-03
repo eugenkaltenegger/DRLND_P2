@@ -2,16 +2,18 @@
 
 ## Project Description
 
-The task of this project is to train an agent to control a robotic arm with two joints.
-The robotic arm consists of two joint which both expect continuous commands in the range -1 to +1 for each of the joints.
-The task for the agent is to control the arm in such a manner that the "hand" of the arm stays within a defined moving sphere.
+In this exercise the task is to create and train an agent to control an arm with two joint in a three-dimensional space.
+Each of the joints expects continuous commands in the range -1 to +1.
+The agent shall control the arm in such a way that the end of the arm (the "hand") is in a defined area.
+The defined are has the shape of a sphere and is rotating around the stable side of the arm (the "shoulder").
 
-In case the hand is located within the sphere the agent is provided a reward.
+If the hand is located within the sphere the agent is provided a reward.
 The exercise description states a reward of 0.1 but the measured maximum reward was approximately 0.04 [1](PROBLEM_SOURCE_1), [2](PROBLEM_SOURCE_2).
 This difference makes the exercise more difficult to solve and one episode has to have at least 770 steps for a perfect agent.
 
-State vector size: 33
-Action vector size: 4
+The environment vectors have the following dimensions:
+- State vector size: 33
+- Action vector size: 4
 
 For this exercise different environments are provided:
 - an environment with one arm (`One`)
@@ -27,7 +29,7 @@ The machine leaning approach for this exercise is free to choose, therefore I de
 [PROBLEM_SOURCE_1]: https://knowledge.udacity.com/questions/32300
 [PROBLEM_SOURCE_2]: https://knowledge.udacity.com/questions/558456
 
-###Dependencies
+### Dependencies
 
 **THIS SECTION ASSUMES THE READER/USER IS USING LINUX**
 
@@ -65,7 +67,7 @@ conda activate kalteneger_p2_continuous-control
 
 With the active conda environment and the installed dependencies the preparation to run the code is completed.
 
-###Execution
+### Execution
 
 **THIS SECTION ASSUMES THE READER/USER IS USING LINUX**
 
