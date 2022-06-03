@@ -155,6 +155,8 @@ hp["critic_optimizer_learning_rate"] = 0.005
 With these values it was possible to solve the environment after 150 to 170 episodes.
 The score graph created with these parameters is shown in the file `training.png`.
 
+![Training Scores](./training.png "Training Scores in `Twenty` environment")
+
 The agent is also able to solve the `One` environment, but for this environment the parameters have not been tweaked.
 
 ### Improvements
