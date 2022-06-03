@@ -1,88 +1,97 @@
-[//]: # (Image References)
+# Udacity - Deep Reinforcement Learning - Project 1
 
-[image1]: https://user-images.githubusercontent.com/10624937/43851024-320ba930-9aff-11e8-8493-ee547c6af349.gif "Trained Agent"
-[image2]: https://user-images.githubusercontent.com/10624937/43851646-d899bf20-9b00-11e8-858c-29b5c2c94ccc.png "Crawler"
+## Project Description
 
+The task of this project is to train an agent to control a robotic arm with two joints.
+The robotic arm consists of two joint which both expect continuous commands in the range -1 to +1 for each of the joints.
+The task for the agent is to control the arm in such a manner that the "hand" of the arm stays within a defined moving sphere.
 
-# Project 2: Continuous Control
+In case the hand is located within the sphere the agent is provided a reward.
+The exercise description states a reward of 0.1 but the measured maximum reward was approximately 0.04 [1](PROBLEM_SOURCE_1), [2](PROBLEM_SOURCE_2).
+This difference makes the exercise more difficult to solve and one episode has to have at least 770 steps for a perfect agent.
 
-### Introduction
+State vector size: 33
+Action vector size: 4
 
-For this project, you will work with the [Reacher](https://github.com/Unity-Technologies/ml-agents/blob/master/docs/Learning-Environment-Examples.md#reacher) environment.
+For this exercise different environments are provided:
+- an environment with one arm (`One`)
+- an environment with twenty arms (`Twenty`)
 
-![Trained Agent][image1]
+In case of the world with multiple arms both the state vector and the action vector both are an array providing the state and excepting the action for each agent.
 
-In this environment, a double-jointed arm can move to target locations. A reward of +0.1 is provided for each step that the agent's hand is in the goal location. Thus, the goal of your agent is to maintain its position at the target location for as many time steps as possible.
+The environment is considered as solved if the agent(s) reach an average score of 30 or higher over 100 episodes.
 
-The observation space consists of 33 variables corresponding to position, rotation, velocity, and angular velocities of the arm. Each action is a vector with four numbers, corresponding to torque applicable to two joints. Every entry in the action vector should be a number between -1 and 1.
+The machine leaning approach for this exercise is free to choose, therefore I decided to use [PPO](PPO) since it was the most appealing algorithm for me.
 
-### Distributed Training
+[PPO]: https://openai.com/blog/openai-baselines-ppo/
+[PROBLEM_SOURCE_1]: https://knowledge.udacity.com/questions/32300
+[PROBLEM_SOURCE_2]: https://knowledge.udacity.com/questions/558456
 
-For this project, we will provide you with two separate versions of the Unity environment:
-- The first version contains a single agent.
-- The second version contains 20 identical agents, each with its own copy of the environment.  
+###Dependencies
 
-The second version is useful for algorithms like [PPO](https://arxiv.org/pdf/1707.06347.pdf), [A3C](https://arxiv.org/pdf/1602.01783.pdf), and [D4PG](https://openreview.net/pdf?id=SyZipzbCb) that use multiple (non-interacting, parallel) copies of the same agent to distribute the task of gathering experience.  
+**THIS SECTION ASSUMES THE READER/USER IS USING LINUX**
 
-### Solving the Environment
+In order to operate this repository it is necessary to download the executables for the environment and to create a conda environment.
+For the world with a single arm the executable can be downloaded [here](One) and for the world with multiple arms the executable can be downloaded [here](Twenty).
 
-Note that your project submission need only solve one of the two versions of the environment. 
+[One]: https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/one_agent/Reacher_Linux.zip
+[Twenty]: https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/Reacher_Linux.zip
 
-#### Option 1: Solve the First Version
+The downloaded `.zip` files have to be extracted and placed in the folder `env`.
+The resulting file structure should look like shown below:
+```bash
+├── env
+│    ├── Reacher_Linux_One
+│    │   └── Reacher_Linux
+│    │       ├── Reacher_Data
+│    │       ├── Reacher.x86
+│    │       └── Reacher.x86_64
+│    └── Reacher_Linux_Twenty
+│        └── Reacher_Linux
+│            ├── Reacher_Data
+│            ├── Reacher.x86
+│            └── Reacher.x86_64
+```
 
-The task is episodic, and in order to solve the environment,  your agent must get an average score of +30 over 100 consecutive episodes.
+To create a conda environment and install the packages required for this repository run the following command:
+```bash
+conda env create --file requirements.yaml
+```
 
-#### Option 2: Solve the Second Version
+This conda environment has to be activated with the following command:
+```bash
+conda activate kalteneger_p2_continuous-control
+```
 
-The barrier for solving the second version of the environment is slightly different, to take into account the presence of many agents.  In particular, your agents must get an average score of +30 (over 100 consecutive episodes, and over all agents).  Specifically,
-- After each episode, we add up the rewards that each agent received (without discounting), to get a score for each agent.  This yields 20 (potentially different) scores.  We then take the average of these 20 scores. 
-- This yields an **average score** for each episode (where the average is over all 20 agents).
+With the active conda environment and the installed dependencies the preparation to run the code is completed.
 
-The environment is considered solved, when the average (over 100 episodes) of those average scores is at least +30. 
+###Execution
 
-### Getting Started
+**THIS SECTION ASSUMES THE READER/USER IS USING LINUX**
 
-1. Download the environment from one of the links below.  You need only select the environment that matches your operating system:
+To execute the code run the following command in a terminal with the active conda environment:
+```bash
+python3 continuous-control.py <mode> <world>
+```
 
-    - **_Version 1: One (1) Agent_**
-        - Linux: [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/one_agent/Reacher_Linux.zip)
-        - Mac OSX: [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/one_agent/Reacher.app.zip)
-        - Windows (32-bit): [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/one_agent/Reacher_Windows_x86.zip)
-        - Windows (64-bit): [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/one_agent/Reacher_Windows_x86_64.zip)
+To code provided in this repository has three operation modes:
+- `tune`: hyperparameter tuning, the list of hyperparameters set in form of lists in the file `hyperparameters_range.py` in the ordered dict is applied.
+  The results of each hyperparameter combination are shown and finally the combination solving the environment after the least steps with the highest score is listed.
+  The graph showing the scores of the best training with the best hyperparameter set is stored in `tuning.png`.
+- `train`: training the agent, the agent is trained with the hyperparameters set in the file `hyperparameters.py` in the ordered dict.
+  The graph for the score and the agent state are stored in `training.png` and `continuous-control.pth`.
+- `show`: showing the operation of the trained agent.
+  The simulation is started with visualization and the trained agent is operating in the environment.
+  This mode is for visualization purposes only.
 
-    - **_Version 2: Twenty (20) Agents_**
-        - Linux: [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/Reacher_Linux.zip)
-        - Mac OSX: [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/Reacher.app.zip)
-        - Windows (32-bit): [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/Reacher_Windows_x86.zip)
-        - Windows (64-bit): [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/Reacher_Windows_x86_64.zip)
-    
-    (_For Windows users_) Check out [this link](https://support.microsoft.com/en-us/help/827218/how-to-determine-whether-a-computer-is-running-a-32-bit-version-or-64) if you need help with determining if your computer is running a 32-bit version or 64-bit version of the Windows operating system.
+The solution can either operate on the `One` environment or the `Twenty` environment.
+The world argument has to be either:
+- `One`
+- `Twenty` (default)
 
-    (_For AWS_) If you'd like to train the agent on AWS (and have not [enabled a virtual screen](https://github.com/Unity-Technologies/ml-agents/blob/master/docs/Training-on-Amazon-Web-Service.md)), then please use [this link](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/one_agent/Reacher_Linux_NoVis.zip) (version 1) or [this link](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Reacher/Reacher_Linux_NoVis.zip) (version 2) to obtain the "headless" version of the environment.  You will **not** be able to watch the agent without enabling a virtual screen, but you will be able to train the agent.  (_To watch the agent, you should follow the instructions to [enable a virtual screen](https://github.com/Unity-Technologies/ml-agents/blob/master/docs/Training-on-Amazon-Web-Service.md), and then download the environment for the **Linux** operating system above._)
+To start the program the command could look like:
+```bash
+python3 continuous-control.py show Twenty
+```
 
-2. Place the file in the DRLND GitHub repository, in the `p2_continuous-control/` folder, and unzip (or decompress) the file. 
-
-### Instructions
-
-Follow the instructions in `Continuous_Control.ipynb` to get started with training your own agent!  
-
-### (Optional) Challenge: Crawler Environment
-
-After you have successfully completed the project, you might like to solve the more difficult **Crawler** environment.
-
-![Crawler][image2]
-
-In this continuous control environment, the goal is to teach a creature with four legs to walk forward without falling.  
-
-You can read more about this environment in the ML-Agents GitHub [here](https://github.com/Unity-Technologies/ml-agents/blob/master/docs/Learning-Environment-Examples.md#crawler).  To solve this harder task, you'll need to download a new Unity environment.  (**Note**: Udacity students should not submit a project with this new environment.)
-
-You need only select the environment that matches your operating system:
-- Linux: [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Crawler/Crawler_Linux.zip)
-- Mac OSX: [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Crawler/Crawler.app.zip)
-- Windows (32-bit): [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Crawler/Crawler_Windows_x86.zip)
-- Windows (64-bit): [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Crawler/Crawler_Windows_x86_64.zip)
-
-Then, place the file in the `p2_continuous-control/` folder in the DRLND GitHub repository, and unzip (or decompress) the file.  Next, open `Crawler.ipynb` and follow the instructions to learn how to use the Python API to control the agent.
-
-(_For AWS_) If you'd like to train the agent on AWS (and have not [enabled a virtual screen](https://github.com/Unity-Technologies/ml-agents/blob/master/docs/Training-on-Amazon-Web-Service.md)), then please use [this link](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P2/Crawler/Crawler_Linux_NoVis.zip) to obtain the "headless" version of the environment.  You will **not** be able to watch the agent without enabling a virtual screen, but you will be able to train the agent.  (_To watch the agent, you should follow the instructions to [enable a virtual screen](https://github.com/Unity-Technologies/ml-agents/blob/master/docs/Training-on-Amazon-Web-Service.md), and then download the environment for the **Linux** operating system above._)
-
+**Note:** the provided agent snapshot (`continuous-control.pth`) was created for the `Twenty` environment.
